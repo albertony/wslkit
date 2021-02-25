@@ -1,0 +1,87 @@
+#!/bin/sh
+#
+# Arch Linux in WSL basic configuration and installation of the basic tools.
+#
+# Written for WSL import of bootstrap archive as of 2021.04.01.
+# To be executed immediately after a clean install, but can also be run later
+# and repeated without creating trouble.
+#
+# Script must be run by root user, since it is installing sudo and cannot
+# execute commands with regular sudo prompt, and also because it creates/edits
+# global config (including the sudoers config) which must be done as root.
+#
+# Based on separate "sub-scripts" for each main action performed (documented below),
+# which can also be executed separately.
+#
+# Main actions:
+# - Minimize filesystem, reducing size with about 100 MiB by removing
+#   unused locales, character sets, documentation etc, and configuring
+#   pacman to not later install them.
+# - Configure pacman. Creates a new mirrorlist file (in /etc/pacman.d)
+#   with a hard coded repository url, to be sure that it can continue installing
+#   packages with pacman, a backup of the original mirrorlist file will be left behind.
+# - Ensure complete timezone database, because by default there are a lot missing
+#   zonedefinitions from the tzdata package, and then WSL's automatic mapping from
+#   Windows timezone may not work.
+# - Perform full package database update and package upgrade.
+# - Install some basic utilities, such as sudo, sed, grep, wget, nano, etc.
+# - Configure system locale (en_us.UTF-8).
+# - Configure sudo, setting the built-in administrators group 'wheel' as allowed sudoer.
+# - Configure shell environment. When running in WSL, update prompt and terminal title
+#   for all users, including root, to use the WSL distro name in place of hostname.
+#   Also modifies the prompt to use more coloring, and adds alias for auto color on ls
+#   and grep (ls is default, not grep). Writes user-specific .bashrc in profile
+#   directories, does not modify global configuration.
+#
+# Contains hard coded configuration (spread accross the different sub-scripts):
+# - Generates and activates system locale en_US.UTF-8, removes everything else
+#   except for en_GB and nb_NO internationalization sources.
+# - Sets time zone Europe/Stockholm, which is part of the "Central European Time" (CET),
+#   with UTC offset +1.
+# - Enables the single package repository mirror mirror.terrahost.no.
+#
+# Passes any script arguments to the pacman install commands, so can execute script
+# with --noconfirm for instance to run non-interactively proceeding without prompting
+# user.
+#
+
+# Verify running as root (not relying on sudo which may not be installed yet).
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
+
+restart_required=0
+
+echo "Minimizing filesystem..."
+. "${0}-minimize"
+
+echo
+echo "Configuring pacman..."
+. "${0}-pacman"
+
+echo
+echo "Configuring packages..."
+. "${0}-packages"
+
+echo
+echo "Configuring locale..."
+. "${0}-locale"
+
+echo
+echo "Configuring sudo..."
+. "${0}-sudo"
+
+echo
+echo "Configuring shell environment"
+. "${0}-shell"
+
+echo
+echo Done
+
+if [ "$restart_required" -ne 0 ]; then
+	echo "NOTICE: Restarting is required for some of the changes to be applied!"
+    if [ -n "$WSL_DISTRO_NAME" ]; then
+        echo "      From WSL host, execute: wsl --shutdown"
+    fi
+fi

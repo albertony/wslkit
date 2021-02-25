@@ -1,0 +1,93 @@
+#!/bin/sh
+#
+# Perform full package database update and package upgrade.
+#
+# Force update the package database and upgrade/downgrade any modified packages.
+# NOTE: Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
+# at least never just --refresh (-y) which will easily lead to the partial upgrades syndrome!
+# Here we do both, performing update and upgrade as a separate step, before installing
+# new packages below with none of them! Doubling up both options (corresponding to -Syyuu)
+# means forced refresh even if they appear to be up to date, and then full upgrade allowing
+# downgrading individual packages to match the version currently in cache! Will prompt
+# user, though, before proceeding (unless --noconfirm is added).
+#
+
+# Verify running as root (not relying on sudo which may not be installed yet).
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
+
+echo
+echo "Updating package database and upgrading packages..."
+if ! pacman --sync --refresh --refresh --sysupgrade --sysupgrade "$@"; then
+    echo "Failed!"
+    exit 1
+fi
+
+#
+# Ensure complete timezone database.
+#
+# The tzdata package is already installed, as dependency to glibc,
+# but it is incomplete, missing about 800 of 2500 files, as revealed
+# by command "pacman --query --check tzdata".
+# This includes timezone definitions for Europe/Rome, Europe/Moscow, Europe/London,
+# Europe/Dublin and Europe/Oslo.
+# WSL automatically sets the timezone of the distro, it creates the /etc/localtime
+# symlink to the proper file under /usr/share/zoneinfo matching the configured
+# timezone in Windows. But if the timezone to be configured does not exist then
+# the distro will be left with UTC. To ensure timezone are set up, we reinstall
+# the tzdata package (no --needed argument) to ensure we have the complete set!
+#
+echo
+echo "Checking timezone database..."
+if ! pacman --query --check --quiet tzdata > /dev/null; then
+    echo "Reinstalling timezone database to get missing zoneinfo files"
+    echo "NOTICE: Ignore warning \"is up to date -- reinstalling\""
+    if ! pacman --sync "$@" tzdata; then
+        echo "Failed!"
+        exit 1
+    fi
+    echo "Success (ignore all warnings \"could not get file information\")"
+    restart_required=1
+    echo "NOTICE: Restarting is required for the changes to be applied!"
+else
+    echo "Timezone database is complete"
+fi
+
+#
+# Install some basic utilities.
+#
+# Arch linux contains almost none except the most necessary system tools required for
+# system startup, but the bootstrap archive as of 2021.02.01 includes at least: pacman,
+# pacman-mirrorlist, ca-certificates, bash, openssl, curl, gawk, bzip2, xz and zlib.
+#
+# There is a group package "base" in the standard core repo, which includes a highly
+# relevant base utilities in any installation, such as tar, gzip, sed, shadow, systemd,
+# grep, iputils (with ping command), procps-ng (with ps command) etc. (some overlap with
+# preinstalled). Currently not installing this, but only the individual packages found
+# to be needed.
+#
+# NOTE: Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
+# at least never --refresh (-y) which will easily lead to the partial upgrades syndrome!
+# Here we do none, update and upgrade was performed as a separate step above, so now
+# we can just install packages according to the current package database.
+#
+echo
+echo "Installing basic packages..."
+if ! pacman --sync --needed "$@" \
+    sudo \
+    sed \
+    grep \
+    tar \
+    gzip \
+    unzip \
+    wget \
+    nano \
+    iputils \
+    iproute2 \
+    procps-ng
+then
+    echo "Failed!"
+    exit 1
+fi

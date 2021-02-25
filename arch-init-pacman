@@ -1,0 +1,92 @@
+#!/bin/sh
+#
+# Configure pacman.
+#
+# Assuming this script is run immediately after a clean install, we must ensure
+# that pacman are configured to be able to install the packages we want.
+# Therefore we start by intializing the pacman keyring, and then configures url
+# to a repository server (mirror).
+#
+# On a clean bootstrapped system there should be no keys (no folder /etc/pacman.d/gnupg),
+# but in case we have tried before without luck we delete it and which forces resetting
+# of all keys as described here:
+# https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys
+#
+# Just moves away the existing mirrorlist file to .old.<random>, and then creates
+# a new file with a hard coded url. Does not have tools such as grep or sed to check
+# if there are already mirrors enabled in the file (the default mirrorlist contains
+# all mirrors commented out).
+# TODO: We could have used gawk, see below (but we may or may not find it..?)
+#
+# The "pacman-key --init" command executed below will on a clean install of bootstrap
+# archive as of 2021.02.01 report an error due to missing awk command. It does enough
+# that "pacman-key --populate archlinux" can be run next (and that fails without the
+# initial "pacman-key --init"), after which we are able to install packages (which we
+# can not without these two commands). Don't know the state of the generated keys in
+# this sitation, so would probably want to install gawk and reset the keys as
+# described here: https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys
+# But gawk is actually installed by default, it is just not not available as "awk"!
+# There is a symlink /usr/bin/awk pointing to /usr/bin/gawk, but /usr/bin/gawk does
+# not exist, while there is an executable /usr/bin/gawk-5.1.0 which does! So we find
+# it and copy it into /usr/bin/awk (or rather /usr/bin/gawk which /usr/bin/awk is an
+# symlink to). Reinstalling the gawk package would have done the same.
+#
+
+# Verify running as root (not relying on sudo which may not be installed yet).
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
+
+# Make sure awk is linked
+awk=/usr/bin/awk
+if [ -e "$awk" ]; then
+    if [ -x "$awk" ]; then
+        echo "Required awk command found at $awk";
+    else
+        # Strange - it exists but is not an executable file!?
+        echo
+        echo "WARNING: Required awk command not found, 'pacman-key --init' will probably report an error. When this script is completed, you should consider resetting all the pacman keys as described here: https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys"
+        echo
+    fi
+else
+    # Find any *awk* executable in /usr/bin
+    realawk=$(find /usr/bin -type f -executable -name "*awk*" -print -quit)
+    if [ -z "$realawk" ]; then
+        echo
+        echo "WARNING: Required awk command not found, 'pacman-key --init' will probably report an error. When this script is completed, you should consider resetting all the pacman keys as described here: https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys"
+        echo
+    else
+        # Found an alternative awk command, e.g. /usr/bin/gawk-5.1.0, make a copy of that as /usr/bin/awk.
+        if [ -h "$awk" ]; then
+            # Primary awk command path exists but is a symlink to non-existing file.
+            # Locate the target of the symlink, so we can copy into that instead
+            # of replacing the symlink!
+            awk=$(readlink --canonicalize --no-newline /usr/bin/awk)
+        fi
+        echo "NOTICE: Required awk command missing but found $realawk, so will copy it to $awk"
+        cp $realawk $awk
+    fi
+fi
+
+# Initialize pacman
+if [ -e /etc/pacman.d/gnupg ]; then
+    echo "NOTICE: Existing pacman keys will be reset" # In case we have tried before without luck!?
+    rm -rf /etc/pacman.d/gnupg
+fi
+pacman-key --init
+pacman-key --populate archlinux >/dev/null
+
+# Configure package repository mirror
+if [ "$(tail --lines=1 /etc/pacman.d/mirrorlist 2>/dev/null)" == "Server = http://mirror.terrahost.no/linux/archlinux/\$repo/os/\$arch" ]; then
+    echo "Package repository mirror already in mirrorlist";
+else
+    if [ -e "/etc/pacman.d/mirrorlist" ]; then
+        mirrorlist_backup=$(mktemp --tmpdir=/etc/pacman.d mirrorlist.old.XXXXX)
+        echo "Moving existing mirrorlist file out of the way: $mirrorlist_backup"
+        mv /etc/pacman.d/mirrorlist $mirrorlist_backup
+    fi
+    echo "Writing package repository mirror to new mirrorlist file"
+    #echo "Server = http://mirror.rackspace.com/archlinux/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+    echo "Server = http://mirror.terrahost.no/linux/archlinux/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+fi

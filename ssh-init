@@ -1,0 +1,60 @@
+#!/bin/sh
+#
+# Init script for SSH agent, that starts an ssh-agent process if not already
+# running, and adds all identities found for current user that are not already
+# loaded. Its purpose is to not only avoid having to execute ssh-add once for
+# each identity, but also to be able to re-run it at will to ensure agent is
+# running and identities are loaded without having to re-enter password for
+# keys that are already loaded!
+#
+# Considers all key files in current user's ~/.ssh, assuming filename
+# prefix "id_" but not suffix "".pub" (e.g. "id_rsa"). Calculates their
+# fingerprint and uses it to check if already loaded in a running ssh-agent,
+# adds them if (and only if) not already loaded.
+#
+# NOTE: Must be sourced into current session!
+#
+# Based on: https://help.github.com/en/articles/working-with-ssh-key-passphrases#auto-launching-ssh-agent-on-git-for-windows
+#
+
+# Check environment variable SSH_AUTH_SOCK.
+# It is required to be able to communicate with the SSH agent, without it ssh-add fails
+# with exit code 2 and message: "Could not open a connection to your authentication agent."
+if [ "$SSH_AUTH_SOCK" ]; then
+    # Environment variable exists, but must verify it is valid and a corresponding
+    # agent can be contacted. Setting helper variable agent_run_state:
+    # 0 means agent is running and a key is loaded, 1 means agent is running but without
+    # any keys, and 2 means agent is not running (or failed to access it).
+    agent_run_state=$(ssh-add -l > /dev/null 2>&1; echo $?)
+else
+    # Missing required environment, just treat it as agent not running.
+    agent_run_state=2
+fi
+
+if [ ! "$SSH_AUTH_SOCK" ] || [ $agent_run_state = 2 ]; then
+    eval $(umask 077; ssh-agent -s) && agent_run_state=1
+fi
+
+if [ $agent_run_state -lt 2 ]; then
+    for identity_file in $(ls ~/.ssh/id_* | grep -v \.pub$); do
+        if [ $agent_run_state -gt 0 ]; then
+            # Agent has no keys, so we just add without further checks
+            echo "Adding SSH identity to the authentication agent"
+            if ! ssh-add -t 4h $identity_file; then
+                echo "Failed!"
+            fi
+        else
+            # Agent already have keys, so we use fingerprint (SHA256 of 43 base64 characters, or SHA512 of 86 base64 characters)
+            # to check if the key reprenseted by given identity_file is already loaded.
+            #if ssh-add -L | ssh-keygen -E sha256 -lf /dev/stdin | grep -q $(ssh-keygen -lf $identity_file -E sha256 | grep -o 'SHA256.\{43\}'); then
+            if ssh-add -L | ssh-keygen -E sha256 -lf /proc/self/fd/0 | grep -q $(ssh-keygen -lf $identity_file -E sha256 | grep -o 'SHA256.\{43\}'); then
+                echo "Identity exists: $identity_file"
+            else
+                ssh-add -t 4h $identity_file
+            fi
+        fi
+    done
+fi
+
+unset identity_file
+unset agent_run_state

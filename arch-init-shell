@@ -1,0 +1,90 @@
+#!/bin/sh
+#
+# Configure shell environment.
+#
+# In WSL environment, make sure prompt and terminal title contains the WSL distro
+# name instead of the hostname, which is that of the WSL host.
+# Do it for all users with a home directory, including root user.
+# Assuming running as root, cannot change only for some "current user".
+#
+# Note: Updates the .bashrc file in individual existing users profile, not the global
+# default!
+#
+
+# Verify running as root (not relying on sudo which may not be installed yet).
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
+
+# Make sure there is a default .bashrc in every existing home directory,
+# and also set owner to the same as the home directory itself.
+# Normally it will exist, e.g. creating users with "useradd --create-home"
+# will put a default .bashrc in place, but there may be a home directory created
+# manually that does not contain a .bashrc..
+# NOTE: Currently does *not* do this! Below we will update any *existing* .bashrc
+# files in existing home directories, but any home directories without .bashrc
+# are left untouched for now. Can be enabled if finding it is relevant!
+#find /home -mindepth 1 -maxdepth 1 -type d -exec cp --no-clobber /etc/skel/.bashrc {} \; -exec chown --reference={} {}/.bashrc \;
+
+# Make sure root user home directory also has a default .bashrc file,
+# as well as .bash_profile to load it for interactive login shells.
+# Normally it does not! Assuming we are running as root, owner should be right.
+cp --no-clobber /etc/skel/.bashrc /etc/skel/.bash_profile /root
+
+# Now check all .bashrc files and update as necessary
+(find /home -mindepth 2 -maxdepth 2 -type f -name .bashrc -print0 && find /root -mindepth 1 -maxdepth 1 -type f -name .bashrc -print0) | while read -d $'\0' file; do
+    user=$(basename $(dirname "$file"))
+    echo "Checking user profile $user"
+    # Configure shell prompt for WSL
+    if [ -z "$WSL_DISTRO_NAME" ]; then
+        echo "Skipping WSL shell prompt: Not in a WSL environment"
+    else
+        # Alternative 1: Default prompt with just \h replaced by ${WSL_DISTRO_NAME}
+        # Assuming default is:
+        #   PS1='[\u@\h \W]\$ '
+        # Creating a new value where ${WSL_DISTRO_NAME} instead of \h:
+        #   PS1='[\u@${WSL_DISTRO_NAME} \W]\$ '
+        # And then also modify terminal title correspondingly, from something like
+        # this which seems to be default, where syntax is "ESC]0;stringBEL" to set
+        # window title to string but not icon (change from value 0 to 1 for only icon,
+        # 2 for only title, 0 means both, although don't seem to make any difference),
+        # with lowercase \w for showing current dir full path, while shell prompt as
+        # specified above uses uppercase \W to show only the basename:
+        #    \[\e]0;\u@\h:\w\a\]
+        # To this:
+        #    \[\e]0;\u@${WSL_DISTRO_NAME}:\w\a\]
+        #prompt="PS1='\\[\\e]0;\\u@\${WSL_DISTRO_NAME}:\\w\\a\\][\\u@\${WSL_DISTRO_NAME} \\W]\\$ '"
+
+        # Alternative 2: More customized prompt with colors:
+        if [ "$user" = "root" ]; then
+            prompt="PS1='\\[\\e]0;\\u@\${WSL_DISTRO_NAME}:\\w\\a\\]\\[\\e[01;36m\\]\\u\\[\\e[01;30m\\]@\\[\\e[01;32m\\]\${WSL_DISTRO_NAME} \\[\e[01;34m\\]\\W \\[\\e[01;31m\\]\\$\\[\\e[00m\\] '"
+        else
+            prompt="PS1='\\[\\e]0;\\u@\${WSL_DISTRO_NAME}:\\w\\a\\]\\[\\e[01;36m\\]\\u\\[\\e[01;30m\\]@\\[\\e[01;32m\\]\${WSL_DISTRO_NAME} \\[\e[01;34m\\]\\W \\[\\e[01;33m\\]\\$\\[\\e[00m\\] '"
+        fi
+
+        # Too many backslash escapes to make it a regex, so checks if exact match and
+        # if not then commenting out existing and adds the new.
+        if cat "$file" | grep --quiet --line-regexp --fixed-strings "$prompt"; then
+            echo "Skipping shell prompt update: Already configured"
+        else
+            echo "Updating shell prompt"
+            sed --in-place --regexp-extended 's/^(\s*PS1=.*)$/#\1/' "$file"
+            echo "$prompt" >> "$file"
+        fi
+    fi
+    # Configure ls alias (already exists by default)
+    if cat "$file" | grep --quiet --line-regexp --fixed-strings "alias ls='ls --color=auto'"; then
+        echo "Skipping ls auto color alias: Already configured"
+    else
+        echo "Adding ls auto color alias"
+        echo "alias ls='ls --color=auto'" >> "$file"
+    fi
+    # Configure grep alias (does not exist by default)
+    if cat "$file" | grep --quiet --line-regexp --fixed-strings "alias grep='grep --colour=auto'"; then
+        echo "Skipping grep auto color alias: Already configured"
+    else
+        echo "Adding grep auto color alias"
+        echo "alias grep='grep --colour=auto'" >> "$file"
+    fi
+done

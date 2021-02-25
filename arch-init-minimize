@@ -1,0 +1,69 @@
+#!/bin/sh
+#
+# Minimize filesystem.
+#
+# Deleting unnecessary files, and configuring pacman to not reinstall them.
+# Creates file /etc/pacman.d/noextract, and includes it from /etc/pacman.conf.
+#
+# Reduces initial filesystem size from 535M to 429M.
+#
+# Note: Doing this early, to avoid installing unnecessary files, but then
+# when updating /etc/pacman.conf we may not have grep available to check
+# if already exists, so will then fallback to simple line search - which
+# may fail and lead to duplicate import, but this should not corrupt the
+# pacman config.
+#
+
+# Verify running as root (not relying on sudo which may not be installed yet).
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
+
+# Localizations
+find /usr/share/locale -mindepth 1 -maxdepth 1 -type d -not -name en_US -exec rm -r {} \;
+# Internationalizations
+find /usr/share/i18n/locales -mindepth 1 -maxdepth 1 -type f -not -name 'i18n*' -not -name 'iso*' -not -name 'trans*' -not -name en_US -not -name en_GB -not -name nb_NO -delete
+# Character sets
+find /usr/share/i18n/charmaps -mindepth 1 -maxdepth 1 -type f -not -name UTF-8.gz -delete
+# Documentation
+rm -r /usr/share/doc/* /usr/share/info/* /usr/share/gtk-doc/html/* /usr/share/man/* > /dev/null 2>&1
+rm /README
+
+# Make sure file /etc/pacman.d/noextract is generated with NoExtract options preventing reinstall removed files
+if [ -f "/etc/pacman.d/noextract" ]; then
+    echo "Skipping generation of pacman NoExtract options: File /etc/pacman.d/noextract already exists"
+    cat /etc/pacman.d/noextract
+    echo ""
+else
+    echo "Generating pacman NoExtract options in separate file /etc/pacman.d/noextract"
+    cat <<EOF > /etc/pacman.d/noextract
+[options]
+NoExtract = usr/share/locale/* !usr/share/locale/locale.alias !usr/share/locale/en_US/*
+NoExtract = usr/share/i18n/locales/* !usr/share/i18n/locales/i18n* !usr/share/i18n/locales/iso* !usr/share/i18n/locales/trans* !usr/share/i18n/locales/en_US !usr/share/i18n/locales/en_GB !usr/share/i18n/locales/nb_NO
+NoExtract = usr/share/i18n/charmaps/* !usr/share/i18n/charmaps/UTF-8.gz
+NoExtract = usr/share/doc/* usr/share/info/* usr/share/gtk-doc/html/* usr/share/man/*
+EOF
+fi
+
+# Make sure file /etc/pacman.d/noextract is included in /etc/pacman.conf
+noextract_import_missing=1
+if command -v grep > /dev/null; then
+    # Grep is available, we can use it with a regular expression to be leanient on space characters etc
+    cat /etc/pacman.conf | grep --quiet '^\s*Include\s*=\s*/etc/pacman.d/noextract\s*$' > /dev/null 2>&1
+    noextract_import_missing=$?
+else
+    # Grep is not available, we search file for exact match of line
+    while read -r line; do
+        if [ "$line" = "Include = /etc/pacman.d/noextract" ]; then
+            noextract_import_missing=0
+            break
+        fi
+    done < /etc/pacman.conf
+fi
+if [ "$noextract_import_missing" -eq 0 ]; then
+    echo "Skipping pacman.conf noextract configuration: Include of /etc/pacman.d/noextract is already present in /etc/pacman.conf"
+else
+    echo "Adding include of /etc/pacman.d/noextract to pacman.conf"
+    echo 'Include = /etc/pacman.d/noextract' >> /etc/pacman.conf
+fi

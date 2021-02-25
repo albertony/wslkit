@@ -1,0 +1,62 @@
+#!/bin/sh
+#
+# Installs development tools, such as git, python and gcc.
+#
+# Passes any script arguments to the pacman commands, so can execute script with
+# --noconfirm for instance to run non-interactively proceeding without prompting
+# user.
+#
+# NOTE: Assumes basic tools are already installed, including sudo.
+# Run script ./arch-init first to ensure this!
+#
+# NOTE: Does not install package group "base-devel", which contains a lot of the
+# relevant packages (gcc, binutils, make, grep, sed, sudo etc), instead just installs
+# any wanted packages individually, and e.g. binutils will be included as depedency
+# of gcc. Also e.g. pyside2 includes libpng, libjpeg-turbo, icu etc.. used by others.
+#
+# NOTE: Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
+# at least never --refresh (-y) which will easily lead to the partial upgrades syndrome!
+#
+sudo pacman --sync --refresh --sysupgrade --needed "$@" \
+    `# Diff command` \
+    diffutils \
+    `# SSL toolkit (is also dependency of openssh, git and others)` \
+    openssl \
+    `# SSH client/server (used with git)` \
+    openssh \
+    `# Git client` \
+    git \
+    `# Qt 5 (contains also dependencies of pyside2)` \
+    qt5-base \
+    qt5-charts \
+    `# Python 3 (is also optional dependency of boost for python bindings)` \
+    python \
+    python-numpy \
+    python-pylint \
+    python-pytest \
+    ipython \
+    pyside2 \
+    `# Boost headers and libraries (includes dependency boost-libs which is also dependency of gcc via source-highlight` \
+    boost \
+    `# Ninja build-system` \
+    ninja \
+    `# CMake build-system generator` \
+    cmake \
+    `# GCC compiler` \
+    gcc \
+    `# GDB debugger` \
+    gdb
+
+# Possible additions
+#    `# Git client LFS extension (not used for now)` \
+#    git-lfs \
+#    `# CCache (to trade disk space for recompilation speed, not installed for now to avoid it being detected and used before configured properly)` \
+#    ccache \
+#    `# Valgrind (not used for now, ant this is quite large - 320MiB installed)` \
+#    valgrind \
+#
+# # If installing ccache, could then also limit the size from default 5GB to 500MB.
+# # Note: This will only have effect for the current user, and will be stored as
+# # configuration file ~/.config/ccache/ccache.conf, so must run the script as the
+# # intended dev user and not root!
+# ccache --set-config max_size=500M

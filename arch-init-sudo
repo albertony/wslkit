@@ -1,0 +1,51 @@
+#!/bin/sh
+#
+# Configure sudo.
+#
+# Add standard administrator's group 'wheel' into sudoers
+# The default /etc/sudoers contains something like this:
+#
+#   ## Uncomment to allow members of group wheel to execute any command
+#   # %wheel ALL=(ALL) ALL
+#
+#   ## Same thing without a password
+#   # %wheel ALL=(ALL) NOPASSWD: ALL
+#
+#   ## Read drop-in files from /etc/sudoers.d
+#   @includedir /etc/sudoers.d
+#
+# Hard to be robust regarding edits in file, additional files in sudoers.d etc...
+#
+
+# Verify running as root (not relying on sudo which may not be installed yet).
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
+
+# Check if sudoers file seems to have configured wheel group, if not then
+# add configuration in separate config file /etc/sudoers.d/wheel, unless it already exists.
+if cat /etc/sudoers | grep --quiet --extended-regexp '^\s*%wheel\s+' ; then # Any configuration of the wheel group uncommented in main config file?
+    echo "Skipping sudoers update: Group wheel is already configured"
+    grep --extended-regexp '^(\s|#)*%wheel\s+' # Show all, commented or not!
+elif [ -f "/etc/sudoers.d/wheel" ]; then
+    echo "Skipping sudoers update: File /etc/sudoers.d/wheel already exists"
+    cat /etc/sudoers.d/wheel
+else
+    echo "Creating /etc/sudoers.d/wheel adding group wheel to sudoers"
+    # Alternative 1: With password
+    echo "%wheel ALL=(ALL) ALL" | tee /etc/sudoers.d/wheel
+    # Alternative 2: Without password
+    #echo "%wheel ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/wheel
+fi
+
+# OLD: Uncomment existing template (unfinished)
+#if cat /etc/sudoers | grep --quiet '^\s*%wheel\s*ALL=(ALL)' ; then # Any of them are set
+#    echo "Skipping sudoers update: group wheel is already sudoer"
+#elif cat /etc/locale.gen | grep --quiet '^\s*#\s*%wheel ALL=(ALL) NOPASSWD:\s*ALL\s*$' ; then
+#    echo "Enabling system locale en_US.UTF-8 in /etc/locale.gen (uncommenting)"
+#    sed -i -r 's/^#(en_US.UTF-8 UTF-8)$/\1/' /etc/locale.gen
+#else
+#    echo "Enabling system locale en_US.UTF-8 in /etc/locale.gen (appending)"
+#    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+#fi

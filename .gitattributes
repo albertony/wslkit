@@ -1,0 +1,4 @@
+# Keep shell scripts with LF and PowerShell script with CRLF.
+# A checkout on Windows may be accessed directly from within a Linux
+# environment in WSL so we dont want CRLF in shell scripts!
+* -text
