@@ -1,0 +1,51 @@
+#!/bin/sh
+#
+# Installs development environment for Go (golang), including gcc (for cgo),
+# and supporting tools such as git.
+#
+# Passes any script arguments to the pacman commands, so can execute script with
+# --noconfirm for instance to run non-interactively proceeding without prompting
+# user.
+#
+# NOTE: Assumes basic tools are already installed, including sudo.
+# Run script ./arch-init first to ensure this!
+#
+# NOTE: Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
+# at least never --refresh (-y) which will easily lead to the partial upgrades syndrome!
+#
+sudo pacman --sync --refresh --sysupgrade --needed "$@" \
+    `# Diff command` \
+    diffutils \
+    `# SSL toolkit (is also dependency of openssh, git and others)` \
+    openssl \
+    `# SSH client/server (used with git)` \
+    openssh \
+    `# Git client` \
+    git \
+    `# GCC compiler` \
+    gcc \
+    `# Go compiler` \
+    go
+    
+
+# Go dev support tools (but can be installed from VSCode or with "go get" command instead)
+#    `# Go basic support tools (goimports, guru, etc)` \
+#    go-tools
+#    `# Go additional support tools (delve, gopls, staticcheck)` \
+#    delve
+#    gopls
+#    staticcheck
+
+
+#    `# Fuse library to be able to use cgofuse` \
+#    fuse2
+
+#    `# Full CMake/Ninja build system for C++` \
+#    `# Ninja build-system` \
+#    ninja \
+#    `# CMake build-system generator` \
+#    cmake \
+
+
+#    `# Alternative Go compiler, based on GCC` \
+#    gcc-go

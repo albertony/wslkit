@@ -173,10 +173,17 @@ script `arch-init` will perform the required steps for you (read the comments fo
 description of what it does), just run the script without arguments:
 `/mnt/c/Wsl/arch-init`.  See also example [below](#arch).
 
-The script `arch-install-dev` can be executed after `arch-init` to install a set
-of packages relevant for a a specific development environment, including:
-Git (with LFS), SSL, SSH, GCC, CMake, Ninja, Qt5, Python (with numpy, pylint,
+The script `arch-install-dev-cpp-python-qt` can be executed after `arch-init` to install
+a set of packages relevant for a specific C++, Python and Qt development environment,
+including: Git (with LFS), SSL, SSH, GCC, CMake, Ninja, Qt5, Python (with numpy, pylint,
 pytest, pyside2 and ipython).
+
+Alternatively, the script `arch-install-dev-go` can be to install a set of packages
+relevant for a different development environment, namely Go (golang), including gcc
+to be able to compile cgo-based packages. It does not install additional Go related
+support tools (such as delve, guru, goimports), since not all are available as
+pacman packages, and also they can easily be installed from VSCode when using WSL remoting,
+or with "go get" command.
 
 The script `ssh-init` is a script for initializing SSH agent for a shell session.
 It starts an ssh-agent process, if not already running, and adds all identities found
