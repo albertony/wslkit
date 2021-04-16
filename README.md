@@ -24,6 +24,26 @@ convenience shell scripts that can be executed from within a newly created WSL d
 for quick initial configuration, installation of different predefined sets of software
 packages etc.
 
+### Windows version
+
+Currently this project has been created to work with Windows 10 version 1909 (build 18363),
+but I am also using the PowerShell script, without the vpnkit feature,
+on a Windows 10 version 20H2 (build 19042).
+
+If you have a different version of Windows you may want to check 
+the [release notes for Windows Subsystem for Linux](https://docs.microsoft.com/en-us/windows/wsl/release-notes)
+to see if there are new features that affects this solution.
+E.g. in build 20190 the built-in `wsl.exe` command gets the ability
+to install WSL distros with `wsl --install` command, and in build 20211
+it can also list available images with `wsl --install --list-distributions`.
+To some degree this will overlap with the `New-Distro` and `Get-DistroImage` functions
+in my PowerShell script, although my variants will still be relevant as they 
+only imports the disk images without fully installing distros as Windows "apps",
+and also have additional support for installation of raw disk images,
+such as official linux releases, i.e. unofficial WSL distributions,
+such as the Arch Linux bootstrap distribution and the Alpine minimal
+root filesystem.
+
 ### Disclaimers
 
 This project exists primarily to support my own use of WSL.
@@ -83,12 +103,18 @@ a unique name and disk file location.
 The installation method of importing the root filesystem archive, are also
 used to include support for some additional images. The official Alpine
 "minimal root filesystem" archives are published on
-[alpinelinux.org](https://alpinelinux.org/downloads/), and Arch linux
+[alpinelinux.org](https://alpinelinux.org/downloads/), and Arch Linux
 "bootstrap" distributions on [archlinux.org](https://archive.archlinux.org/iso/).
 Both of these are supported by the PowerShell script; it will download the
 latest version, import it into WSL, and do the basic configuration like
 creation of user etc. like with the officially WSL adapted images.
 See complete list of supported Linux distributions [below](#linux-distributions).
+
+Edit: Since this was written, Microsoft has written a short how-to guide covering
+this same approach: [Import any Linux distribution to use with WSL](https://docs.microsoft.com/en-us/windows/wsl/use-custom-distro).
+It mentions importing Alpine "minimal root filesystem", but main example it uses
+is CentOS by extracting the disk image from a docker container. So this is now
+an "officially approved" method for installing WSL distros!
 
 ### VPNKit
 
