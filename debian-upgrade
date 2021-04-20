@@ -78,8 +78,8 @@ RELEASE_CHANNEL=${1:-${RELEASE_CHANNEL:-stable}}
 echo "Channel: ${RELEASE_CHANNEL}"
 
 if ! cat /etc/os-release | grep -q '^ID=debian$'; then
-	echo "This is not a Debian system!"
-	exit 1
+    echo "This is not a Debian system!"
+    exit 1
 fi
 echo "Checking versions..."
 
@@ -128,92 +128,92 @@ echo "Installed version: $CURRENT_VERSION ($CURRENT_CODENAME)"
 echo
 
 if [ "$LATEST_CODENAME" = "$CURRENT_CODENAME" ]; then
-	# No major version change.
-	# Always run a simple package update just in case.
-	echo "Updating packages..."
-	if ! sudo apt update || ! sudo apt upgrade ; then
-		echo "ERROR: Update commands returned with error code $?"
-		exit 1
-	fi
-	echo
-	if [ -z "$LATEST_VERSION" -o "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
-		echo "Your system is up to date: $CURRENT_VERSION ($CURRENT_CODENAME)"
-	else
-		echo "Your system was updated and is on latest release codename '${CURRENT_CODENAME}', but version '${CURRENT_VERSION}' differs from latest '${LATEST_VERSION}'"
-	fi
+    # No major version change.
+    # Always run a simple package update just in case.
+    echo "Updating packages..."
+    if ! sudo apt update || ! sudo apt upgrade ; then
+        echo "ERROR: Update commands returned with error code $?"
+        exit 1
+    fi
+    echo
+    if [ -z "$LATEST_VERSION" -o "$CURRENT_VERSION" = "$LATEST_VERSION" ]; then
+        echo "Your system is up to date: $CURRENT_VERSION ($CURRENT_CODENAME)"
+    else
+        echo "Your system was updated and is on latest release codename '${CURRENT_CODENAME}', but version '${CURRENT_VERSION}' differs from latest '${LATEST_VERSION}'"
+    fi
 else
-	echo "Performing major upgrade from '${CURRENT_CODENAME}' to '${LATEST_CODENAME}'..."
+    echo "Performing major upgrade from '${CURRENT_CODENAME}' to '${LATEST_CODENAME}'..."
 
-	# Get current channel configured for main binary packages source.
-	CURRENT_SOURCE_CHANNEL=$(cat /etc/apt/sources.list | sed -rn 's/^deb\s+https?:\/\/deb.debian.org\/debian\s+([a-z]*)\s+main$/\1/p')
-	[ -z "$CURRENT_SOURCE_CHANNEL" ] && echo "FAILED: Unable to find current configured main package source version codename" && exit 1
+    # Get current channel configured for main binary packages source.
+    CURRENT_SOURCE_CHANNEL=$(cat /etc/apt/sources.list | sed -rn 's/^deb\s+https?:\/\/deb.debian.org\/debian\s+([a-z]*)\s+main$/\1/p')
+    [ -z "$CURRENT_SOURCE_CHANNEL" ] && echo "FAILED: Unable to find current configured main package source version codename" && exit 1
 
-	if [ "$CURRENT_SOURCE_CHANNEL" = "$LATEST_CODENAME" ]; then
-		# Note: In this case we do not want to run simple package update (sudo apt update && sudo apt upgrade),
-		# because we want to use the full upgrade procedure since the package sources have changed!
-		echo "WARNING: Main package source are already configured for latest release, will not update it:"
-		echo
-		cat /etc/apt/sources.list
-		echo
-	else
-		# Run a simple package update for existing release
-		echo "Updating packages..."
-		if ! sudo apt update || ! sudo apt upgrade ; then
-			echo "ERROR: Update commands returned with error code $?"
-			exit 1
-		fi
-		echo
-		# Switch package source to new release
-		if [ "$CURRENT_SOURCE_CHANNEL" != "$CURRENT_CODENAME" ]; then
-			echo "WARNING: Main package source are currently configured to a release different from both current and latest release!"
-		fi
-		echo "Will perform a full-upgrade after changing /etc/apt/sources.list from this:"
-		echo
-		cat /etc/apt/sources.list
-		echo "To this:"
-		echo
-		if [ "${LATEST_CODENAME}" = "bullseye" ]; then
-			# Note: Additional change introduced with Debian 11 bullseye: In the security
-			# repository the distributions are called <version>-security instead of <version>/updates.
-			# Also changes from url security.debian.org/debian-security/ to just security.debian.org,
-			# although this is not critical as they are just aliases to the same repository.
-			cat /etc/apt/sources.list | sed -r -e "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/" -e "s/security.debian.org\/debian-security\/?\s+${LATEST_CODENAME}\/updates/security.debian.org ${LATEST_CODENAME}-security/"
-		else
-			cat /etc/apt/sources.list | sed "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/"
-		fi
-		echo
-		read -p "Do you want to continue? [Y/n]" choice
-		case "$choice" in
-		""|y|Y ) ;;
-		* ) echo "Aborted";exit 1;;
-		esac
-		if [ "${LATEST_CODENAME}" = "bullseye" ]; then
-			if ! sudo sed -i -r -e "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/" -e "s/security.debian.org\/debian-security\/?\s+${LATEST_CODENAME}\/updates/security.debian.org ${LATEST_CODENAME}-security/" /etc/apt/sources.list; then
-				echo "ERROR: Could not update /etc/apt/sources.list"
-				exit 1
-			fi
-		else
-			if ! sudo sed -i "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/" /etc/apt/sources.list; then
-				echo "ERROR: Could not update /etc/apt/sources.list"
-				exit 1
-			fi
-		fi
-	fi
-	# Run full upgrade from changed package source
-	# Note: Using 'apt-get upgrade' instead of 'apt upgrade' in this case, as recommended by debian!
-	if ! sudo apt update || ! sudo apt-get upgrade || ! sudo apt full-upgrade ; then
-		echo "ERROR: Upgrade commands returned with error code $?"
-		exit 1
-	fi
-	if ! sudo apt --purge autoremove ; then
-		echo "WARNING: Cleanup of unused dependencies failed with error code $?"
-		exit 1
-	fi
+    if [ "$CURRENT_SOURCE_CHANNEL" = "$LATEST_CODENAME" ]; then
+        # Note: In this case we do not want to run simple package update (sudo apt update && sudo apt upgrade),
+        # because we want to use the full upgrade procedure since the package sources have changed!
+        echo "WARNING: Main package source are already configured for latest release, will not update it:"
+        echo
+        cat /etc/apt/sources.list
+        echo
+    else
+        # Run a simple package update for existing release
+        echo "Updating packages..."
+        if ! sudo apt update || ! sudo apt upgrade ; then
+            echo "ERROR: Update commands returned with error code $?"
+            exit 1
+        fi
+        echo
+        # Switch package source to new release
+        if [ "$CURRENT_SOURCE_CHANNEL" != "$CURRENT_CODENAME" ]; then
+            echo "WARNING: Main package source are currently configured to a release different from both current and latest release!"
+        fi
+        echo "Will perform a full-upgrade after changing /etc/apt/sources.list from this:"
+        echo
+        cat /etc/apt/sources.list
+        echo "To this:"
+        echo
+        if [ "${LATEST_CODENAME}" = "bullseye" ]; then
+            # Note: Additional change introduced with Debian 11 bullseye: In the security
+            # repository the distributions are called <version>-security instead of <version>/updates.
+            # Also changes from url security.debian.org/debian-security/ to just security.debian.org,
+            # although this is not critical as they are just aliases to the same repository.
+            cat /etc/apt/sources.list | sed -r -e "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/" -e "s/security.debian.org\/debian-security\/?\s+${LATEST_CODENAME}\/updates/security.debian.org ${LATEST_CODENAME}-security/"
+        else
+            cat /etc/apt/sources.list | sed "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/"
+        fi
+        echo
+        read -p "Do you want to continue? [Y/n]" choice
+        case "$choice" in
+        ""|y|Y ) ;;
+        * ) echo "Aborted";exit 1;;
+        esac
+        if [ "${LATEST_CODENAME}" = "bullseye" ]; then
+            if ! sudo sed -i -r -e "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/" -e "s/security.debian.org\/debian-security\/?\s+${LATEST_CODENAME}\/updates/security.debian.org ${LATEST_CODENAME}-security/" /etc/apt/sources.list; then
+                echo "ERROR: Could not update /etc/apt/sources.list"
+                exit 1
+            fi
+        else
+            if ! sudo sed -i "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/" /etc/apt/sources.list; then
+                echo "ERROR: Could not update /etc/apt/sources.list"
+                exit 1
+            fi
+        fi
+    fi
+    # Run full upgrade from changed package source
+    # Note: Using 'apt-get upgrade' instead of 'apt upgrade' in this case, as recommended by debian!
+    if ! sudo apt update || ! sudo apt-get upgrade || ! sudo apt full-upgrade ; then
+        echo "ERROR: Upgrade commands returned with error code $?"
+        exit 1
+    fi
+    if ! sudo apt --purge autoremove ; then
+        echo "WARNING: Cleanup of unused dependencies failed with error code $?"
+        exit 1
+    fi
 fi
 
 # Package cache cleanup
 if ! sudo apt clean ; then
-	echo "WARNING: Cleanup of package cache failed with error code $?"
-	exit 1
+    echo "WARNING: Cleanup of package cache failed with error code $?"
+    exit 1
 fi
 

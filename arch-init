@@ -80,7 +80,7 @@ echo
 echo Done
 
 if [ "$restart_required" -ne 0 ]; then
-	echo "NOTICE: Restarting is required for some of the changes to be applied!"
+    echo "NOTICE: Restarting is required for some of the changes to be applied!"
     if [ -n "$WSL_DISTRO_NAME" ]; then
         echo "      From WSL host, execute: wsl --shutdown"
     fi

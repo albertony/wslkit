@@ -3,6 +3,12 @@
 # Installs development environment for Go (golang), including gcc (for cgo),
 # and supporting tools such as git.
 #
+# Also performs refresh of package database and upgrade of existing packages to ensure
+# we get latest versions. Runs with the -Syu option, which seems to be the recommended
+# approach for normal upgrades on arch, not -Syuu which may also downgrade packages. In
+# any case, remember to either do both --refresh (-y) and --sysupgrade (-u), or none of
+# them, at least never --refresh (-y) which will easily lead to the partial upgrades syndrome!
+#
 # Passes any script arguments to the pacman commands, so can execute script with
 # --noconfirm for instance to run non-interactively proceeding without prompting
 # user.
@@ -10,9 +16,8 @@
 # NOTE: Assumes basic tools are already installed, including sudo.
 # Run script ./arch-init first to ensure this!
 #
-# NOTE: Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
-# at least never --refresh (-y) which will easily lead to the partial upgrades syndrome!
-#
+
+echo "Updating package database, upgrading existing packages, and installing new packages..."
 sudo pacman --sync --refresh --sysupgrade --needed "$@" \
     `# Diff command` \
     diffutils \
@@ -46,6 +51,12 @@ sudo pacman --sync --refresh --sysupgrade --needed "$@" \
 #    `# CMake build-system generator` \
 #    cmake \
 
-
 #    `# Alternative Go compiler, based on GCC` \
 #    gcc-go
+
+echo
+echo "Cleaning package cache..."
+if ! pacman --sync --clean "$@"; then
+    echo "Failed!"
+    exit 1
+fi

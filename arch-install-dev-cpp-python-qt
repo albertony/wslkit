@@ -2,6 +2,12 @@
 #
 # Installs development tools, such as git, python and gcc.
 #
+# Also performs refresh of package database and upgrade of existing packages to ensure
+# we get latest versions. Runs with the -Syu option, which seems to be the recommended
+# approach for normal upgrades on arch, not -Syuu which may also downgrade packages. In
+# any case, remember to either do both --refresh (-y) and --sysupgrade (-u), or none of
+# them, at least never --refresh (-y) which will easily lead to the partial upgrades syndrome!
+#
 # Passes any script arguments to the pacman commands, so can execute script with
 # --noconfirm for instance to run non-interactively proceeding without prompting
 # user.
@@ -14,9 +20,8 @@
 # any wanted packages individually, and e.g. binutils will be included as depedency
 # of gcc. Also e.g. pyside2 includes libpng, libjpeg-turbo, icu etc.. used by others.
 #
-# NOTE: Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
-# at least never --refresh (-y) which will easily lead to the partial upgrades syndrome!
-#
+
+echo "Updating package database, upgrading existing packages, and installing new packages..."
 sudo pacman --sync --refresh --sysupgrade --needed "$@" \
     `# Diff command` \
     diffutils \
@@ -60,3 +65,10 @@ sudo pacman --sync --refresh --sysupgrade --needed "$@" \
 # # configuration file ~/.config/ccache/ccache.conf, so must run the script as the
 # # intended dev user and not root!
 # ccache --set-config max_size=500M
+
+echo
+echo "Cleaning package cache..."
+if ! pacman --sync --clean "$@"; then
+    echo "Failed!"
+    exit 1
+fi

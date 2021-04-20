@@ -18,8 +18,11 @@ if [ ${EUID:-$(id -u)} -ne 0 ]; then
     exit 1
 fi
 
+#
+# Force update the package database and upgrade/downgrade any modified packages.
+#
 echo
-echo "Updating package database and upgrading packages..."
+echo "Forcing update of package database and performing full upgrade/downgrade of packages..."
 if ! pacman --sync --refresh --refresh --sysupgrade --sysupgrade "$@"; then
     echo "Failed!"
     exit 1
@@ -88,6 +91,16 @@ if ! pacman --sync --needed "$@" \
     iproute2 \
     procps-ng
 then
+    echo "Failed!"
+    exit 1
+fi
+
+#
+# Cleanup package cache.
+#
+echo
+echo "Cleanup package cache..."
+if ! pacman --sync --clean "$@"; then
     echo "Failed!"
     exit 1
 fi
