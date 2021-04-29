@@ -1906,7 +1906,7 @@ function New-VpnKit
 			# Download script from GitHub repo
 			$DownloadName = 'wsl-vpnkit'
 			$DownloadFullName = Join-Path $Destination $DownloadName
-			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/wsl-vpnkit/contents/${DownloadName}?ref=vpnkit_path" -DisableKeepAlive | Select-Object -ExpandProperty download_url
+			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/wsl-vpnkit/contents/${DownloadName}" -DisableKeepAlive | Select-Object -ExpandProperty download_url
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
