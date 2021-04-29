@@ -1906,13 +1906,17 @@ function New-VpnKit
 			# Download script from GitHub repo
 			$DownloadName = 'wsl-vpnkit'
 			$DownloadFullName = Join-Path $Destination $DownloadName
-			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/wsl-vpnkit/contents/${DownloadName}" -DisableKeepAlive | Select-Object -ExpandProperty download_url
+			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/wsl-vpnkit/contents/${DownloadName}?ref=vpnkit_path" -DisableKeepAlive | Select-Object -ExpandProperty download_url
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
 			# Update VPNKIT_PATH in script with destination path to vpnkit.exe
 			# NOTE: This will tie it to the VPNKit program folder on host!
 			$DestinationVpnKitExe = (Join-Path $Destination 'vpnkit.exe').Replace('\','/')
+			if ($DestinationVpnKitExe -match '^(\w):(.*)$')
+			{
+				$DestinationVpnKitExe = "/mnt/$($Matches[1].ToLower())$($Matches[2])"
+			}
 			$FileContent = [System.IO.File]::ReadAllText($DownloadFullName, (New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
 			$FileContent = $FileContent -replace "\nVPNKIT_PATH=.*?\n", "`nVPNKIT_PATH=`${VPNKIT_PATH:-$DestinationVpnKitExe}`n"
 			[System.IO.File]::WriteAllText($DownloadFullName, $FileContent, (New-Object System.Text.UTF8Encoding $false))
