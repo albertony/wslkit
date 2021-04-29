@@ -498,20 +498,29 @@ documentation, are:
 - Intall `socat` with the WSL distro's package manager (see below if you do not have
   internet access from within the WSL distro yet).
 - Download [npiperelay](https://github.com/jstarks/npiperelay), extract `npiperelay.exe`
-  from the archive download and copy it into the WSL file system (e.g. `/usr/local/bin`),
-  or create a symlink to the location on host using the `/mnt/c` path.
+  from the archive download and copy it into a location in the WSL file system which
+  is in `$PATH`, typically `/usr/local/bin`. Alternatively you can leave it in a
+  permanent location on host, and create a symlink from the WSL location to the
+  location on host via the automatic `/mnt/c` path. You can also put it in a location
+  that is not in `$PATH`, if you edit the `wsl-vpnkit` script and adds the path
+  (within WSL or out to host) to the reference to it).
 - Get the executables `vpnkit.exe` and `vpnkit-tap-vsockd` from [Docker Desktop](https://hub.docker.com/editions/community/docker-ce-desktop-windows/).
    - If you do not have Docker Desktop already installed, instead of installing it just
      to get a hold on these files, you can download the installer and extract it
      with [7-Zip](https://www.7-zip.org/) - first extract the installer exe, and
      then from the extracted folder extract once more the `resources/wsl/docker-for-wsl.iso`
      file, and you should find the two executables for easy copy-install.
-  - Copy the `vpnkit-tap-vsockd` executable into into the WSL filesystem. Note that
-    it must be put into `/sbin` and owned by root (`chown root:root /sbin/vpnkit-tap-vsockd`).
-  - Leave the `vpnkit.exe` executable in a "permanent" location on host, and update
-    the `wsl-vpnkit` script with the path to it in variable `VPNKIT_PATH` - or you
-    can set the variable each time you run the script,
-    e.g. `VPNKIT_PATH=C:/VPNKit/vpnkit.exe wsl-vpnkit`.
+- Copy the `vpnkit-tap-vsockd` executable into into the WSL filesystem. Note that
+  it must be put into `/sbin` and owned by root (`chown root:root /sbin/vpnkit-tap-vsockd`).
+- Make the `vpnkit.exe` executable accessible from the `wsl-vpnkit` script. As with
+  `npiperelay.exe` it can be kept within WSL filesystem or in host filesystem.
+  In contrast to `npiperelay.exe` it will be referenced using a script variable `VPNKIT_PATH`,
+  with a hard-coded default value. Therefore you cannot just make it available from `$PATH`
+  in WSL, but you can either edit the default value in the script, or set the variable
+  each time you run the script, e.g. `VPNKIT_PATH=/mnt/c/VPNKit/vpnkit.exe wsl-vpnkit`.
+  Then you can, of course, choose to set it to a value of just `vpnkit.exe`, and it will
+  be searched from in `$PATH` after all, and you can put a symlink or physical file
+  in `/usr/local/bin` as with `npiperelay.exe`.
 - Configure DNS as described [below](#vpnkit-manual-configuration).
 - Finally, run the `wsl-vpnkit` script from the WSL distro to start the network services,
   and you should have connectivity from WSL through the host's network connection as long
