@@ -38,7 +38,7 @@
 # tools and configuration files for the VPNKit network setup, deployed into
 # the distro by Intall-VpnKit.
 # This includes:
-# - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/sakai135/wsl-vpnkit
+# - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/albertony/wsl-vpnkit (fork of https://github.com/sakai135/wsl-vpnkit)
 # - vpnkit.exe (Windows executable) and vpnkit-tap-vsockd (Linux/WSL2 executable)
 #   from Docker Desktop for Windows: https://hub.docker.com/editions/community/docker-ce-desktop-windows/
 # - npiperelay.exe (Windows executable) from https://github.com/jstarks/npiperelay
@@ -1766,7 +1766,7 @@ function Stop-Wsl
 # for example with standard PowerShell command Remove-Item.
 #
 # The created directory will contain:
-# - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/sakai135/wsl-vpnkit
+# - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/albertony/wsl-vpnkit (fork of https://github.com/sakai135/wsl-vpnkit)
 # - vpnkit.exe (Windows executable) and vpnkit-tap-vsockd (Linux/WSL2 executable)
 #   from Docker Desktop for Windows: https://hub.docker.com/editions/community/docker-ce-desktop-windows/
 # - npiperelay.exe (Windows executable) from https://github.com/jstarks/npiperelay
@@ -1787,7 +1787,7 @@ function Stop-Wsl
 # .LINK
 # Install-VpnKit
 # .LINK
-# https://github.com/sakai135/wsl-vpnkit/
+# https://github.com/albertony/wsl-vpnkit/
 function New-VpnKit
 {
 	[CmdletBinding(SupportsShouldProcess)]
@@ -1906,7 +1906,7 @@ function New-VpnKit
 			# Download script from GitHub repo
 			$DownloadName = 'wsl-vpnkit'
 			$DownloadFullName = Join-Path $Destination $DownloadName
-			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/sakai135/wsl-vpnkit/contents/${DownloadName}" -DisableKeepAlive | Select-Object -ExpandProperty download_url
+			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/wsl-vpnkit/contents/${DownloadName}" -DisableKeepAlive | Select-Object -ExpandProperty download_url
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
@@ -1937,9 +1937,9 @@ function New-VpnKit
 				"generateResolvConf = false`n",
 				(New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
 
-			# /etc/resolv.conf : Set a default nameserver to be used, so that there is one also when wsl-vpnkit script is not running,
-			# and since wsl.conf is configured to not let WSL update it with nameserver either.
-			# Using 1.1.1.1, which is Coloudfare's free DNS service.
+			# /etc/resolv.conf : Set the hard-coded IP (192.168.67.1) of the VPNKit gateway,
+			# as the default nameserver and a free, public DNS service as secondary nameserver
+			# (chosing 1.1.1.1, which is Cloudflare's free, pro-privacy, world's fastest, DNS service).
 			# Note: When wsl-vpnkit script is running it will replace the contents with the actual IP of the vpnkit.exe gateway process
 			# that it uses, which in turn will use the DNS settings on the host computer.
 			# Note: If the wsl-vpnkit script is running on another wsl distro, it will configure network, socket and pipe connection
@@ -2146,7 +2146,7 @@ function New-VpnKit
 # Start-VpnKit
 # Uninstall-VpnKit
 # .LINK
-# https://github.com/sakai135/wsl-vpnkit/
+# https://github.com/albertony/wsl-vpnkit/
 function Install-VpnKit
 {
 	[CmdletBinding(SupportsShouldProcess)]

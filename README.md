@@ -131,17 +131,20 @@ it can easily be problematic with VPN, and will be entirely blocked by some
 antivirus/firewall software etc. See also [this](https://github.com/moby/vpnkit#why-is-this-needed).
 
 The main part of this functionality is a shell script `wsl-vpnkit` from repository
-[github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit), which was
-also the main inspiration for all the VPNKit related functionality in the current repository.
-It was initially created with the assumption that you have network connectivity using
-the default WSL networking, but needed the customized networking to be able to use
-a VPN connection from the host. The shell script assumes you have installed
-the `socat` utility in the distribution, but if your case is that you have no network
-connectivity at all from within your WSL distributions, then how do you do that? What
-you can do is to download the package archive files on your host computer, and install
-them from file in the WSL distribution using its package tool in "offline-mode".
-The `Install-VpnKit` function of my `Wsl.ps1` does this for you. See the
-[VPNKit manual install](#vpnkit-manual-install) section below for details.
+[github.com/albertony/wsl-vpnkit](https://github.com/albertony/wsl-vpnkit). This is
+my own fork of [github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit),
+which was also the main inspiration for all the VPNKit related functionality in the
+current repository. The main reason for using my own fork is to ensure compatibility.
+
+The `wsl-vpnkit` documentation was initially written with the assumption that you
+have network connectivity using the default WSL networking, but needed the customized
+networking to be able to use a VPN connection from the host. The shell script assumes
+you have installed the `socat` utility in the distribution, but if your case is that
+you have no network connectivity at all from within your WSL distributions, then how
+do you do that? What you can do is to download the package archive files on your host
+computer, and install them from file in the WSL distribution using its package tool
+in "offline-mode". The `Install-VpnKit` function of my `Wsl.ps1` does this for you.
+See the [VPNKit manual install](#vpnkit-manual-install) section below for details.
 
 If you want to know more, read the vpnkit documentation for background information
 about the pipe based networking used by Docker with VPNKit:
@@ -489,7 +492,7 @@ specify its path with parameter `-SevenZip "path\to\your\7z.exe"`.
 
 One of the main purposes of the PowerShell script [Wsl.ps1](Wsl.ps1) provided by
 this project, is to automate the steps necessary to install and run VPNKit.
-The required steps, as described in the [wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit)
+The required steps, as described in the [wsl-vpnkit](https://github.com/albertony/wsl-vpnkit)
 documentation, are:
 - Copy the `wsl-vpnkit` shell script into the WSL file system (e.g. `/usr/local/bin`).
 - Intall `socat` with the WSL distro's package manager (see below if you do not have
