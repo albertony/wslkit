@@ -1910,15 +1910,14 @@ function New-VpnKit
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
-			# Update VPNKIT_PATH in script with destination path to vpnkit.exe
+			# Update default values of VPNKIT_PATH and VPNKIT_NPIPERELAY_PATH variables in the script to the destination path via automount.
 			# NOTE: This will tie it to the VPNKit program folder on host!
-			$DestinationVpnKitExe = (Join-Path $Destination 'vpnkit.exe').Replace('\','/')
-			if ($DestinationVpnKitExe -match '^(\w):(.*)$')
-			{
-				$DestinationVpnKitExe = "/mnt/$($Matches[1].ToLower())$($Matches[2])"
-			}
+			$DestinationMount = $Destination.Replace('\','/')
+			if ($DestinationMount -notmatch '^(\w):(.*?)(?:/*)$') { throw "Destination must be a rooted path reachable from wsl via automount" }
+			$DestinationMount = "/mnt/$($Matches[1].ToLower())$($Matches[2])"
 			$FileContent = [System.IO.File]::ReadAllText($DownloadFullName, (New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
-			$FileContent = $FileContent -replace "\nVPNKIT_PATH=.*?\n", "`nVPNKIT_PATH=`${VPNKIT_PATH:-$DestinationVpnKitExe}`n"
+			$FileContent = $FileContent -replace "\nVPNKIT_PATH=.*?\n", "`nVPNKIT_PATH=`${VPNKIT_PATH:-${DestinationMount}/vpnkit.exe}`n"
+			$FileContent = $FileContent -replace "\nVPNKIT_NPIPERELAY_PATH=.*?\n", "`nVPNKIT_NPIPERELAY_PATH=`${VPNKIT_NPIPERELAY_PATH:-${DestinationMount}/npiperelay.exe}`n"
 			[System.IO.File]::WriteAllText($DownloadFullName, $FileContent, (New-Object System.Text.UTF8Encoding $false))
 		}
 
@@ -1976,22 +1975,24 @@ function New-VpnKit
 			# to the VPNKit program folder on host, but this is also the case for the main run script
 			# wsl-vpnkit which has path to vpnkit.exe on host!
 			# NOTE: The wsl-vpnkit script executes vpnkit.exe on host, and via socat also npiperelay.exe.
-			# Socat needs to find npiperelay.exe from path: It can be copied into the wsl together with
-			# the other files in /usr/local/bin, even though it is a Windows executable, or it can be
-			# created a symlink there pointing back to the host location. By copying it in we avoid the
-			# reference back to host location, but we already have that with vpnkit.exe (referenced from
-			# the wsl-vpnkit script). By linking to host location it can easily be upgraded to new version
-			# without working with wsl, which could also be a downside if there are breaking changes,
-			# different versions in use etc..
+			# These can be copied into the wsl together with the other files in /usr/local/bin, even
+			# though it is a Windows executable, or can create a symlink there pointing back to the host
+			# location, or they can just be left on host and the wsl-vpnkit script can be configured to
+			# find them in the host location. By copying into wsl we avoid the reference back to host location.
+			# By linking to host location it can easily be upgraded to new version without working with wsl,
+			# which could also be a downside if there are breaking changes, different versions in use etc..
 			$DestinationRoot = [System.IO.Path]::GetPathRoot($Destination)
 			$DestinationWslMount = "/mnt/$($Destination.Replace($DestinationRoot, $DestinationRoot.ToLower().Replace(':','')).Replace('\','/'))"
 			[System.IO.File]::WriteAllText((Join-Path $Destination 'wsl-vpnkit-install'),
 				"#!/bin/sh`n" + `
 				"if [ `${EUID:-`$(id -u)} -ne 0 ]; then echo 'Please run this script as root'; exit 1; fi`n" + `
-				# WSL-VPNKit program files
+				# WSL-VPNKit script
 				"cp `"${DestinationWslMount}/wsl-vpnkit`" /usr/local/bin/`n" + `
+				# WSL-VPNKit Windows utilities (vpnkit.exe and npiperelay.exe)
+				# These can be copied into /usr/local/bin as well, or creating a symlink back to host,
+				# or the wsl-vpnkit script can be configured to find them in host location
 				#"cp `"${DestinationWslMount}/npiperelay.exe`" /usr/local/bin/`n" + ` # npiperelay option 1: Copy into wsl
-				"ln -sf `"${DestinationWslMount}/npiperelay.exe`" /usr/local/bin/npiperelay.exe`n" + ` # npiperelay option 2: Symlink back to host
+				#"ln -sf `"${DestinationWslMount}/npiperelay.exe`" /usr/local/bin/npiperelay.exe`n" + ` # npiperelay option 2: Symlink back to host
 				"cp `"${DestinationWslMount}/vpnkit-tap-vsockd`" /sbin/`n" + `
 				"chown root:root /sbin/vpnkit-tap-vsockd`n"+ `
 				# Utility scripts
@@ -2065,11 +2066,11 @@ function New-VpnKit
 				"if [ `${EUID:-`$(id -u)} -ne 0 ]; then echo 'Please run this script as root'; exit 1; fi`n" + `
 				# Perform same as unconfigure does, reverting changes from configure
 				"[ -f /etc/resolv.conf ] && rm /etc/resolv.conf`n" + `
-				"[ -f /etc/wsl.conf ] && sed -i '/^[ \t]*generateResolvConf[ \t]*=[ \t]*false/d' /etc/wsl.conf`n" + ` # Delete any and all lines setting generateResolvConf to false
+				"[ -f /etc/wsl.conf ] && sed -i '/^[ \t]*generateResolvConf[ \t]*=[ \t]*false/d' /etc/wsl.conf && [ `"`$(cat /etc/wsl.conf)`" = `"[network]`" ] && rm /etc/wsl.conf`n" + ` # Delete any and all lines setting generateResolvConf to false, and if only network section header is left in the file delete entire file
 				# Revert additional changes from install
 				"[ -f /sbin/vpnkit-tap-vsockd ] && rm /sbin/vpnkit-tap-vsockd`n" + `
 				"[ -f /usr/local/bin/wsl-vpnkit ] && rm /usr/local/bin/wsl-vpnkit`n" + `
-				"[ -f /usr/local/bin/npiperelay.exe ] && rm /usr/local/bin/npiperelay.exe`n" + `
+				#"[ -f /usr/local/bin/npiperelay.exe ] && rm /usr/local/bin/npiperelay.exe`n" + `
 				"[ -f /usr/local/bin/wsl-vpnkit-configure ] && rm /usr/local/bin/wsl-vpnkit-configure`n" + `
 				"[ -f /usr/local/bin/wsl-vpnkit-unconfigure ] && rm /usr/local/bin/wsl-vpnkit-unconfigure`n" + `
 				"[ -f /usr/local/bin/wsl-vpnkit-uninstall ] && rm /usr/local/bin/wsl-vpnkit-uninstall`n", # Note: At the end delete the installed copy of current script, may or may not be the one currently running!
@@ -2111,7 +2112,6 @@ function New-VpnKit
 # - /usr/local/bin/wsl-vpnkit-configure (shell script generated by New-VpnKit)
 # - /usr/local/bin/wsl-vpnkit-unconfigure (shell script generated by New-VpnKit)
 # - /usr/local/bin/wsl-vpnkit-uninstall (shell script generated by New-VpnKit)
-# - /usr/local/bin/npiperelay.exe (symbolic link to third party executable)
 # - /sbin/vpnkit-tap-vsockd (third party executable)
 #
 # Modifies configuration files:
@@ -2212,14 +2212,13 @@ function Install-VpnKit
 		if (-not $ConfigurationOnly)
 		{
 			Write-Host "cp `"${ProgramDirectoryWslMount}/wsl-vpnkit`" /usr/local/bin/"
-			#Write-Host "cp `"${ProgramDirectoryWslMount}/npiperelay.exe`" /usr/local/bin/" # npiperelay option 1: Copy into wsl
-			Write-Host "ln -s `"${ProgramDirectoryWslMount}/npiperelay.exe`" /usr/local/bin/npiperelay.exe" + ` # npiperelay option 2: Symlink back to host
 			Write-Host "cp `"${ProgramDirectoryWslMount}/vpnkit-tap-vsockd`" /sbin/" # Note: This one goes into the standard directory for root programs
 			Write-Host "chown root:root /sbin/vpnkit-tap-vsockd"
-			# Update VPNKIT_PATH in wsl-vpnkit script with destination path to vpnkit.exe on host.
-			# Note: Currently done in PowerShell above, so the source file is already correct at this point.
+			# Note: Could also update VPNKIT_PATH and VPNKIT_NPIPERELAY_PATH in wsl-vpnkit script with destination path to vpnkit.exe on host,
+			# but this is currently done in PowerShell above, so the source file is already correct at this point.
 			#$DestinationVpnKitExe = (Join-Path $Destination 'vpnkit.exe').Replace('\','\/')
-			#Write-Host "sed -i 's/VPNKIT_PATH=.*/VPNKIT_PATH=${DestinationVpnKitExe}/' /usr/local/bin/wsl-vpnkit"
+			#Write-Host "sed -i 's/VPNKIT_PATH=.*/VPNKIT_PATH=${DestinationVpnKitExe}/' /usr/local/bin/vpnkit.exe"
+			#Write-Host "sed -i 's/VPNKIT_NPIPERELAY_PATH=.*/VPNKIT_NPIPERELAY_PATH=${DestinationVpnKitExe}/' /usr/local/bin/npiperelay.exe"
 		}
 		else
 		{

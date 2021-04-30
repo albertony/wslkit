@@ -492,43 +492,66 @@ specify its path with parameter `-SevenZip "path\to\your\7z.exe"`.
 
 One of the main purposes of the PowerShell script [Wsl.ps1](Wsl.ps1) provided by
 this project, is to automate the steps necessary to install and run VPNKit.
-The required steps, as described in the [wsl-vpnkit](https://github.com/albertony/wsl-vpnkit)
-documentation, are:
-- Copy the `wsl-vpnkit` shell script into the WSL file system (e.g. `/usr/local/bin`).
-- Intall `socat` with the WSL distro's package manager (see below if you do not have
-  internet access from within the WSL distro yet).
+The required steps are described in the [wsl-vpnkit](https://github.com/albertony/wsl-vpnkit)
+documentation. The example commands there are for execution from within WSL, which
+requires you to already have internet access. Here are the same steps described
+for running them on the host, and with some more detail:
+- Install `socat` with the WSL distro's package manager. When you do not have internet
+  access from the WSL distro yet, you will have to download the packages on host and
+  install them from local path, as described below.
+- Download the [wsl-vpnkit](https://raw.githubusercontent.com/albertony/wsl-vpnkit/main/wsl-vpnkit)
+  shell script, and copy it into the WSL file system (e.g. `/usr/local/bin`). From within WSL,
+  you can copy it from a host location via the `/mnt/c/` automount, e.g. to copy from `C:\bin`
+  on host to `/usr/local/bin` in distro filesystem:
+  ```
+  cp /mnt/c/bin/wsl-vpnkit /usr/local/bin
+  ```
 - Download [npiperelay](https://github.com/jstarks/npiperelay), extract `npiperelay.exe`
-  from the archive download and copy it into a location in the WSL file system which
-  is in `$PATH`, typically `/usr/local/bin`. Alternatively you can leave it in a
-  permanent location on host, and create a symlink from the WSL location to the
-  location on host via the automatic `/mnt/c` path. You can also put it in a location
-  that is not in `$PATH`, if you edit the `wsl-vpnkit` script and adds the path
-  (within WSL or out to host) to the reference to it).
-- Get the executables `vpnkit.exe` and `vpnkit-tap-vsockd` from [Docker Desktop](https://hub.docker.com/editions/community/docker-ce-desktop-windows/).
+  from the archive download, and copy it to a location reachable to the `wsl-vpnkit` script.
+  - The script references it using variable `VPNKIT_NPIPERELAY_PATH`, with default
+    value `/mnt/c/bin/npiperelay.exe`, so putting it in `C:\bin` on host will make the
+    script work without changes.
+  - You can put it in other locations as long as you set the variable before running the
+    script, or modify the script source, e.g.
+    `VPNKIT_NPIPERELAY_PATH=/mnt/c/VPNKit/npiperelay.exe wsl-vpnkit`.
+  - You can choose to keep it within the WSL filesystem instead of the host, if you want
+    a more "self-contained" distro installation, not tied to a fixed location on host.
+  - If you put it in a location found from `$PATH` within WSL, e.g. `/usr/local/bin`,
+    or create a symbolic link in such a location pointing to the real location, it being
+    in WSL or even host's filesystem, you can run the script like this:
+    `VPNKIT_NPIPERELAY_PATH=npiperelay.exe wsl-vpnkit`.
+- Get the executables `vpnkit.exe` and `vpnkit-tap-vsockd` from
+  [Docker Desktop](https://hub.docker.com/editions/community/docker-ce-desktop-windows/).
    - If you do not have Docker Desktop already installed, instead of installing it just
      to get a hold on these files, you can download the installer and extract it
      with [7-Zip](https://www.7-zip.org/) - first extract the installer exe, and
      then from the extracted folder extract once more the `resources/wsl/docker-for-wsl.iso`
-     file, and you should find the two executables for easy copy-install.
+     file, and you should find the two executables for easy copy-install. For example,
+     to install them into C:\bin execute something like this from a PowerShell prompt:
+     ```
+     Start-BitsTransfer "https://desktop.docker.com/win/stable/Docker Desktop Installer.exe"
+     7z x "Docker Desktop Installer.exe" resources\vpnkit.exe resources\wsl\docker-for-wsl.iso
+     7z x resources\wsl\docker-for-wsl.iso containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd
+     New-Item -ItemType Directory -Path C:\bin
+     Move-Item "resources\vpnkit.exe" C:\bin
+     Move-Item "containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd" C:\bin
+     ```
 - Copy the `vpnkit-tap-vsockd` executable into into the WSL filesystem. Note that
-  it must be put into `/sbin` and owned by root (`chown root:root /sbin/vpnkit-tap-vsockd`).
-- Make the `vpnkit.exe` executable accessible from the `wsl-vpnkit` script. As with
-  `npiperelay.exe` it can be kept within WSL filesystem or in host filesystem.
-  In contrast to `npiperelay.exe` it will be referenced using a script variable `VPNKIT_PATH`,
-  with a hard-coded default value. Therefore you cannot just make it available from `$PATH`
-  in WSL, but you can either edit the default value in the script, or set the variable
-  each time you run the script, e.g. `VPNKIT_PATH=/mnt/c/VPNKit/vpnkit.exe wsl-vpnkit`.
-  Then you can, of course, choose to set it to a value of just `vpnkit.exe`, and it will
-  be searched from in `$PATH` after all, and you can put a symlink or physical file
-  in `/usr/local/bin` as with `npiperelay.exe`.
+  it must be put into `/sbin` and owned by root. For example, from within WSL prompt:
+  ```
+  sudo cp /mnt/c/bin/vpnkit-tap-vsockd /sbin/vpnkit-tap-vsockd
+  chown root:root /sbin/vpnkit-tap-vsockd
+  ```
+- Make the `vpnkit.exe` executable accessible from the `wsl-vpnkit` script, just as
+  with `npiperelay.exe` described above, but now with script variable `VPNKIT_PATH`.
 - Configure DNS as described [below](#vpnkit-manual-configuration).
 - Finally, run the `wsl-vpnkit` script from the WSL distro to start the network services,
   and you should have connectivity from WSL through the host's network connection as long
   as this script is running!
 
 If you have no internet connectivity in your WSL distro using the default networking,
-the problem with the above steps is: How do you install the `socat` package? What
-you can do is download the package archive files on your host computer, and
+the remaining challenge from the above steps is: How do you install the `socat` package?
+What you can do is download the package archive files on your host computer, and
 install them from file in the WSL distribution using its package tool in
 "offline-mode", referencing the downloaded package archive files on host through
 the automatically `/mnt/c` mount. The package required is called "socat" in
