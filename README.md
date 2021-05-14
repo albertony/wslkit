@@ -360,6 +360,22 @@ More details. In general, you must look into the different scripts to learn
 everything about what they do. Reading the comment headers is a good start,
 but you may have to dive into the source code as well.
 
+### Wsl.ps1
+
+The PowerShell script `Wsl.ps1` is a utility script intended to be dot sourced
+into a PowerShell session, to expose its functionality for interactive use.
+
+Parts of the functionality is based on GitHub API. It is open for anonymous access,
+but will then impose heavy rate limiting. This can be avoided by authenticating
+with a Personal Access Token. So if you have a GitHub account, then generate a
+token at https://github.com/settings/tokens/new (no special permissions needed),
+and supply you username and token (instead of password) when dot sourcing
+the `Wsl.ps1` script:
+
+```
+. Wsl.ps1 -GitHubCredential (Get-Credential)
+```
+
 ### Wsl.ps1 functions
 
 - New-Distro

@@ -170,6 +170,25 @@
 # PS C:\Wsl> Start-VpnKit
 # PS C:\Wsl> Start-Distro
 #
+[CmdletBinding()]
+param
+(
+	[pscredential] $GitHubCredential # GitHub API imposes heavy rate limiting which can be avoided by authentication with username and a Personal Access Token as password.
+)
+
+function Get-GitHubApiAuthenticationHeaders([pscredential]$Credential)
+{
+	if ($Credential)
+	{
+		@{
+			Authorization = "Basic $([Convert]::ToBase64String([System.Text.Encoding]::Ascii.GetBytes("$($Credential.UserName):$($Credential.GetNetworkCredential().Password)")))"
+		}
+	}
+	else
+	{
+		@{}
+	}
+}
 
 # .SYNOPSIS
 # Utility function function to pipe output from external commands into the verbose stream.
@@ -259,10 +278,23 @@ function Save-File
 	param
 	(
 		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $Url,
-		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $Path
+		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $Path,
+		[pscredential] $Credential
 	)
-	Write-Verbose "Downloading ${Url} -> ${Path}"
-	Start-BitsTransfer -Source $Url -Destination $Path
+	if ($Credential) {
+		Write-Verbose "Downloading ${Url} (authenticated as $($Credential.UserName)) -> ${Path}"
+		#$GitHubApiHeaders = Get-GitHubApiAuthenticationHeaders -Credential $GitHubCredential
+		#Invoke-WebRequest -Uri $Url -UseBasicParsing -DisableKeepAlive -OutFile $Path -Headers $GitHubApiHeaders
+		Start-BitsTransfer -Source $Url -Destination $Path -Authentication Basic -Credential $Credential
+		#$WebClient = New-Object System.Net.WebClient
+		#$WebClient.Headers['Authorization'] = $GitHubApiHeaders['Authorization']
+		#$WebClient.Credential = $GitHubCredential
+		#$WebClient.DownloadFile($Url, $Path)
+		#$WebClient.Dispose()
+	} else {
+		Write-Verbose "Downloading ${Url} -> ${Path}"
+		Start-BitsTransfer -Source $Url -Destination $Path
+	}
 	# BitsTransfer may have problems with signed url downloads from GitHub, 
 	# and also needs TLS 1.1/1.2 to be explicitely enabled on WinHTTP in Windows 7,
 	# so then WebClient can be used instead.
@@ -1089,7 +1121,7 @@ function IsDistroItemPackageInstalled($Item)
 function Get-DistroImage
 {
 	# Get Microsoft direct download links
-	$Links = Invoke-WebRequest -Uri 'https://docs.microsoft.com/en-us/windows/wsl/install-manual' -UseBasicParsing | Select-Object -ExpandProperty Links | Where-Object { $_.'data-linktype' -eq 'external' } | Select-Object -ExpandProperty href
+	$Links = Invoke-WebRequest -Uri 'https://docs.microsoft.com/en-us/windows/wsl/install-manual' -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Where-Object { $_.'data-linktype' -eq 'external' } | Select-Object -ExpandProperty href
 	# Get urls with hostname aka.ms.
 	# In article updated 09/15/2020 these are:
 	#   Ubuntu 20.04
@@ -1123,9 +1155,9 @@ function Get-DistroImage
 	# There is also an unofficial Alpine WSL that is officially endorsed by the Alpine project (https://gitlab.alpinelinux.org/alpine/aports/-/issues/9408),
 	# but it is only available on Microsoft Store without a direct download link, and anyway it is just a small wrapper around the
 	# official "Minimal root filesystem" distribution, so we can easily replicate the necessary steps when installing!
-	$ArchiveName = Invoke-WebRequest -Uri 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/latest-releases.yaml' -UseBasicParsing | Select-String -Pattern 'alpine-minirootfs-(.*)-x86_64.tar.gz' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
+	$ArchiveName = Invoke-WebRequest -Uri 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/latest-releases.yaml' -UseBasicParsing -DisableKeepAlive | Select-String -Pattern 'alpine-minirootfs-(.*)-x86_64.tar.gz' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
 	if ($ArchiveName) {
-		$Checksum = Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}.sha512" -UseBasicParsing | Select-String -Pattern "^(.*)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+		$Checksum = Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}.sha512" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		$DistroImages += @(
 			[PSCustomObject]@{
 				Url = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}"
@@ -1142,10 +1174,10 @@ function Get-DistroImage
 	# Arch official "bootstrap" distribution, latest version.
 	# There is only an unofficial Arch WSL available.
 	# Note: The compressed tar file must be fixed before import, the filesystem must be moved from subfolder root.x86_64 to root.
-	$ReleaseFolder = Invoke-WebRequest -Uri 'https://archive.archlinux.org/iso/' -UseBasicParsing | Select-Object -ExpandProperty Links | Select-Object -Last 1 | Select-Object -ExpandProperty href
+	$ReleaseFolder = Invoke-WebRequest -Uri 'https://archive.archlinux.org/iso/' -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -Last 1 | Select-Object -ExpandProperty href
 	$ArchiveName = "archlinux-bootstrap-$($ReleaseFolder.TrimEnd('/'))-x86_64.tar.gz"
 	if ($ReleaseFolder) {
-		$Checksum = Invoke-WebRequest -Uri "https://archive.archlinux.org/iso/${ReleaseFolder}sha1sums.txt" -UseBasicParsing | Select-String -Pattern "(?m)^(.*)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+		$Checksum = Invoke-WebRequest -Uri "https://archive.archlinux.org/iso/${ReleaseFolder}sha1sums.txt" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "(?m)^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		$DistroImages += @(
 			[PSCustomObject]@{
 				Url = "https://archive.archlinux.org/iso/${ReleaseFolder}${ArchiveName}"
@@ -1159,18 +1191,20 @@ function Get-DistroImage
 		)
 	}
 
-	# Fedora root filesystem from official Docker images, last three releases plus the "rawhide" development/daily build.
+	# Fedora root filesystem from official Docker images, last three releases, including the "rawhide" development/daily build.
 	# Alternative 1: Downloading from the official GitHub project used for publishing to Docker Hub.
 	# These are imports of the so-called "Container Base" published on fedoraproject.org, but with some modifications?
 	# Note: The GitHub API imposes heavy rate limiting!
-	(Invoke-RestMethod "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/branches${BranchPath}") | Where-Object -Property name -NE "master" | Sort-Object -Property name -Descending | ForEach-Object {
-		(Invoke-RestMethod "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/git/trees/$($_.commit.sha)") | Select-Object -ExpandProperty tree | Where-Object -Property path -EQ x86_64 | Select-Object -ExpandProperty sha | ForEach-Object {
-			(Invoke-RestMethod "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/git/trees/${_}") | Select-Object -ExpandProperty tree | Where-Object { $_.type -eq "blob" -and $_.path -match '(fedora-.*)[.-].*-x86_64.tar.xz' } | ForEach-Object {
+	$GitHubApiHeaders = Get-GitHubApiAuthenticationHeaders -Credential $GitHubCredential
+	(Invoke-RestMethod -Uri "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/branches" -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object -Property name -NE "master" | Sort-Object -Property name -Descending | Select-Object -First 3 | ForEach-Object {
+		(Invoke-RestMethod -Uri "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/contents?ref=$($_.name)" -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object { $_.type -eq "dir" -and $_.name -eq "x86_64" } | Select-Object -ExpandProperty url -First 1 | ForEach-Object {
+			(Invoke-RestMethod -Uri $_ -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object { $_.type -eq "file" -and $_.name -match '(fedora-.*)[.-].*-x86_64.tar.xz' } | ForEach-Object {
 				$DistroImages += @(
 					[PSCustomObject]@{
-						Url = $_.url
+						Url = $_.download_url
 						Id = $Matches[1].ToLower()
-						FileName = $_.path
+						FileName = $_.name
+						#TODO: No checksum available?
 					}
 				)
 			}
@@ -1187,7 +1221,7 @@ function Get-DistroImage
 			BaseUrl = "${BaseUrl}development/"
 		}
 	)
-	$Versions += (Invoke-WebRequest -Uri "${BaseUrl}releases/").Links.href | Where-Object { $_ -match '^(\d+)/' } | ForEach-Object { [int] $Matches[1] } | Sort-Object -Descending | Select-Object -First 3 | ForEach-Object {
+	$Versions += (Invoke-WebRequest -Uri "${BaseUrl}releases/").Links.href | Where-Object { $_ -match '^(\d+)/' } | ForEach-Object { [int] $Matches[1] } | Sort-Object -Descending | Select-Object -First 2 | ForEach-Object {
 		@{
 			MajorVersion = $_
 			BaseUrl = "${BaseUrl}releases/"
@@ -1371,13 +1405,19 @@ function New-Distro
 			Write-Host "Downloading distro image '$($DistroImage.Id)'..."
 			$DownloadUrl = $DistroImage.Url
 			$DownloadFullName = Join-Path $TempDirectory $DistroImage.FileName
-			Save-File -Url $DownloadUrl -Path $DownloadFullName
+			if (([uri]$DownloadUrl).Host -eq 'api.github.com') {
+				Save-File -Url $DownloadUrl -Path $DownloadFullName -Credential $GitHubCredential
+			} else {
+				Save-File -Url $DownloadUrl -Path $DownloadFullName
+			}
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
 			if ($DistroImage.Checksum) {
 				# Verify checksum
 				$ExpectedHash = $DistroImage.Checksum.Value
-				Write-Verbose "Verifying checksum..."
+				Write-Host "Verifying checksum..."
+				Write-Verbose "Expected `"${ExpectedHash}`""
 				$ActualHash = Get-FileHash -LiteralPath $DownloadFullName -Algorithm ($DistroImage.Checksum.Algorithm) | Select-Object -ExpandProperty Hash
+				Write-Verbose "Actual   `"${ActualHash}`""
 				if ($ExpectedHash -ne $ActualHash) {
 					throw "Checksum ($($DistroImage.Checksum.Algorithm)) mismatch: Expected ${ExpectedHash} but was ${ActualHash}"
 				}
@@ -1468,8 +1508,8 @@ function New-Distro
 						Write-Warning "Failed to create user (error code ${LastExitCode})"
 					}
 				}
-				elseif ($DistroImage.Id -eq 'archlinux-bootstrap' -or $DistroImage.Id -like 'fedora-*') {
-					# Arch/Fedora
+				elseif ($DistroImage.Id -eq 'archlinux-bootstrap') {
+					# Arch
 					# Add user with required non-empty password. Use low-level command 'useradd',
 					# since 'adduser' is not built-in. Make it a member of group "wheel".
 					Write-Host "Creating user '${UserName}' as member of wheel group (you will be prompted for password)..."
@@ -1477,6 +1517,25 @@ function New-Distro
 					wsl.exe --distribution $Name passwd $UserName
 					if ($LastExitCode -ne 0) {
 						Write-Warning "Failed to set password (error code ${LastExitCode})"
+					}
+				}
+				elseif ($DistroImage.Id -like 'fedora-*') {
+					# Fedora
+					# Add user with required non-empty password. Use low-level command 'useradd',
+					# since 'adduser' is not built-in. Make it a member of group "wheel".
+					# Command 'passwd' is not included by default, so uses 'chpasswd' instead,
+					# prompting for the password in PowerShell and pipes it into chpasswd in wsl.
+					Write-Host "Creating user '${UserName}' as member of wheel group (you will be prompted for password)..."
+					wsl.exe --distribution $Name sh -c "useradd --create-home --groups wheel ${UserName}"
+					$Credential = Get-Credential -UserName $UserName -Message "Create password for user ${Name}"
+					if ($Credential -and $Credential.GetNetworkCredential().Password) {
+						wsl.exe --distribution $Name sh -c "echo `"$($Credential.UserName):$($Credential.GetNetworkCredential().Password)`" | chpasswd"
+						if ($LastExitCode -ne 0) {
+							Write-Warning "Failed to set password (error code ${LastExitCode})"
+						}
+					}
+					else {
+						Write-Warning "No password set"
 					}
 				}
 				else {
@@ -1544,7 +1603,7 @@ function New-Distro
 				#   and on systems where VPNKit is required then another distro must have already been installed and running VPNKit,
 				#   and also it soon gets a bit complex to handle any state problem free..
 				if ($DistroInfo.VersionCodeName) {
-					$LatestVersion, $LatestCodeName = Invoke-RestMethod -Uri https://deb.debian.org/debian/dists/stable/Release -DisableKeepAlive | Select-String -Pattern '(?m)^Version:\s*(.*)\n.*Codename:\s*(.*)$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1,2 | Select-Object -ExpandProperty Value
+					$LatestVersion, $LatestCodeName = Invoke-RestMethod -Uri 'https://deb.debian.org/debian/dists/stable/Release' -DisableKeepAlive | Select-String -Pattern '(?m)^Version:\s*(.*)\n.*Codename:\s*(.*)$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1,2 | Select-Object -ExpandProperty Value
 					if ($LatestCodeName -and $LatestCodeName -ne $DistroInfo.VersionCodeName) {
 						Write-Host "Note: There is a newer stable release of Debian that you can upgrade to: $($DistroInfo.Version) ($($DistroInfo.VersionCodeName)) -> ${LatestVersion} (${LatestCodeName})"
 					} elseif ($DistroInfo.Version -and $LatestVersion -and $DistroInfo.Version -ne $LatestVersion) {
@@ -1971,9 +2030,10 @@ function New-VpnKit
 			if (-not $TempDirectory) { $TempDirectory = New-TempDirectory -Path $WorkingDirectory }
 			$DownloadName = 'npiperelay_windows_amd64.zip'
 			$DownloadFullName = Join-Path $TempDirectory $DownloadName
-			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/jstarks/npiperelay/releases/latest" -DisableKeepAlive | Select-Object -ExpandProperty assets | Where-Object { $_.name -match $DownloadName } | Select-Object -First 1 | Select-Object -ExpandProperty browser_download_url
+			$GitHubApiHeaders = Get-GitHubApiAuthenticationHeaders -Credential $GitHubCredential
+			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/jstarks/npiperelay/releases/latest" -DisableKeepAlive -Headers $GitHubApiHeaders | Select-Object -ExpandProperty assets | Where-Object { $_.name -match $DownloadName } | Select-Object -First 1 | Select-Object -ExpandProperty browser_download_url
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
-			Save-File -Url $DownloadUrl -Path $DownloadFullName
+			Save-File -Url $DownloadUrl -Path $DownloadFullName -Credential $GitHubCredential
 			# Extract executable, copy into destination and clean up
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
 			#&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" 'npiperelay.exe' | Out-Verbose
@@ -2002,9 +2062,10 @@ function New-VpnKit
 			# Download script from GitHub repo
 			$DownloadName = 'wsl-vpnkit'
 			$DownloadFullName = Join-Path $Destination $DownloadName
-			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/wsl-vpnkit/contents/${DownloadName}" -DisableKeepAlive | Select-Object -ExpandProperty download_url
+			$GitHubApiHeaders = Get-GitHubApiAuthenticationHeaders -Credential $GitHubCredential
+			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/wsl-vpnkit/contents/${DownloadName}" -DisableKeepAlive -Headers $GitHubApiHeaders | Select-Object -ExpandProperty download_url
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
-			Save-File -Url $DownloadUrl -Path $DownloadFullName
+			Save-File -Url $DownloadUrl -Path $DownloadFullName -Credential $GitHubCredential
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
 			# Update default values of VPNKIT_PATH and VPNKIT_NPIPERELAY_PATH variables in the script to the destination path via automount.
 			# NOTE: This will tie it to the VPNKit program folder on host!
@@ -2362,10 +2423,10 @@ function Install-VpnKit
 							if (-not $DistroInfo.PackageSourceCodeName) {
 								$DownloadUrl = $null
 							} else {
-								$DownloadUrl = Invoke-WebRequest -Uri "https://packages.debian.org/$($DistroInfo.PackageSourceCodeName)/amd64/${Package}/download" -UseBasicParsing | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "https?://ftp.no.debian.org/debian" } | Select-Object -First 1
+								$DownloadUrl = Invoke-WebRequest -Uri "https://packages.debian.org/$($DistroInfo.PackageSourceCodeName)/amd64/${Package}/download" -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "https?://ftp.no.debian.org/debian" } | Select-Object -First 1
 								if (-not $DownloadUrl) {
 									# Try once more from the security repo, in case it is there (libssl1.1 will be there)!
-									$DownloadUrl = Invoke-WebRequest -Uri "https://packages.debian.org/$($DistroInfo.PackageSourceCodeName)/amd64/${Package}/download" -UseBasicParsing | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "https?://security.debian.org/debian-security" } | Select-Object -First 1
+									$DownloadUrl = Invoke-WebRequest -Uri "https://packages.debian.org/$($DistroInfo.PackageSourceCodeName)/amd64/${Package}/download" -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "https?://security.debian.org/debian-security" } | Select-Object -First 1
 								}
 							}
 							if (-not $DownloadUrl) {
@@ -2458,7 +2519,7 @@ function Install-VpnKit
 						Write-Host "Downloading packages '$($Packages -join `"', '`")'..."
 						$PackageDownloadNames = @()
 						foreach ($Package in $Packages) {
-							$DownloadName = Invoke-WebRequest -Uri $DownloadBaseUrl -UseBasicParsing | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | select-String -Pattern "^${Package}-\d.*$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
+							$DownloadName = Invoke-WebRequest -Uri $DownloadBaseUrl -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | select-String -Pattern "^${Package}-\d.*$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
 							if (-not $DownloadName) {
 								Write-Warning "Unable to download package '${Package}', you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
 							} else {
@@ -2518,7 +2579,7 @@ function Install-VpnKit
 						$PackageDownloadNames = @()
 						foreach ($Package in $Packages) {
 							$DownloadBaseUrl = "${DownloadMirror}/$($Package.Repository)/os/x86_64/"
-							$DownloadName = Invoke-WebRequest -Uri $DownloadBaseUrl -UseBasicParsing | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | select-String -Pattern "^$($Package.Name)-\d.*\.tar\.zst$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
+							$DownloadName = Invoke-WebRequest -Uri $DownloadBaseUrl -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | select-String -Pattern "^$($Package.Name)-\d.*\.tar\.zst$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
 							if (-not $DownloadName) {
 								Write-Warning "Unable to download package '$($Package.Name)', you must manually ensure required packages '$($Packages.Name -join `"', '`")' gets installed"
 							} else {
@@ -2575,7 +2636,7 @@ function Install-VpnKit
 						$PackageDownloadNames = @()
 						foreach ($Package in $Packages) {
 							$DownloadUrl = "${DownloadBaseUrl}$($Package[0])/"
-							$DownloadName = Invoke-WebRequest -Uri $DownloadUrl -UseBasicParsing | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "^${Package}-\d.*\.x86_64\.rpm$" } | Select-Object -First 1 # Pick first with a version number, skip "-devel", "-static" or other variants
+							$DownloadName = Invoke-WebRequest -Uri $DownloadUrl -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "^${Package}-\d.*\.x86_64\.rpm$" } | Select-Object -First 1 # Pick first with a version number, skip "-devel", "-static" or other variants
 							$DownloadUrl += $DownloadName
 							if (-not $DownloadName) {
 								Write-Warning "Unable to download package '$($Package.Name)', you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
