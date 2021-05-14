@@ -1089,7 +1089,7 @@ function IsDistroItemPackageInstalled($Item)
 function Get-DistroImage
 {
 	# Get Microsoft direct download links
-	$Links = Invoke-WebRequest -Uri https://docs.microsoft.com/en-us/windows/wsl/install-manual -UseBasicParsing | Select-Object -ExpandProperty Links | Where-Object { $_.'data-linktype' -eq 'external' } | Select-Object -ExpandProperty href
+	$Links = Invoke-WebRequest -Uri 'https://docs.microsoft.com/en-us/windows/wsl/install-manual' -UseBasicParsing | Select-Object -ExpandProperty Links | Where-Object { $_.'data-linktype' -eq 'external' } | Select-Object -ExpandProperty href
 	# Get urls with hostname aka.ms.
 	# In article updated 09/15/2020 these are:
 	#   Ubuntu 20.04
@@ -1100,11 +1100,12 @@ function Get-DistroImage
 	#   OpenSUSE Leap 42
 	#   SUSE Linux Enterprise Server 12.
 	# (not including ARM versions of Ubuntu 20.04 and 18.04).
-	$DistroImages = @($Links | Where-Object { $_.StartsWith("https://aka.ms/") -and -not $_.EndsWith("arm") } | ForEach-Object {
+	$DistroImages = @($Links | Where-Object { $_.StartsWith('https://aka.ms/') -and -not $_.EndsWith('arm') } | ForEach-Object {
+		$id = $_ -replace '^.*/(?:wsl-?)?([^/]*)$','$1'
 		[PSCustomObject]@{
 			Url = $_ # The URL to be used for downloading.
-			Id = $_ -replace '^.*/(?:wsl-?)?([^/]*)$','$1' # A unique id to be used in for selecting distro image in this script.
-			FileName = "$($DistroImage.Id).appx" # The filename that will be downloaded. The URL may be redirected and not contain name. Using the extension to know how it can be installed.
+			Id = $Id # A unique id to be used in for selecting distro image in this script.
+			FileName = "${Id}.appx" # The filename that will be downloaded. The URL may be redirected and not contain name. Using the extension to know how it can be installed.
 		}
 	})
 	# Get urls with hostname github.com.
@@ -1118,35 +1119,101 @@ function Get-DistroImage
 	# Other "unofficial" versions:
 	#   ArchWSL (https://github.com/yuk7/ArchWSL/releases)
 	
-	# Alpine official "Minimal root filesystem" distribution.
+	# Alpine official "Minimal root filesystem" distribution, latest version.
 	# There is also an unofficial Alpine WSL that is officially endorsed by the Alpine project (https://gitlab.alpinelinux.org/alpine/aports/-/issues/9408),
 	# but it is only available on Microsoft Store without a direct download link, and anyway it is just a small wrapper around the
 	# official "Minimal root filesystem" distribution, so we can easily replicate the necessary steps when installing!
 	$ArchiveName = Invoke-WebRequest -Uri 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/latest-releases.yaml' -UseBasicParsing | Select-String -Pattern 'alpine-minirootfs-(.*)-x86_64.tar.gz' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
 	if ($ArchiveName) {
+		$Checksum = Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}.sha512" -UseBasicParsing | Select-String -Pattern "^(.*)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		$DistroImages += @(
 			[PSCustomObject]@{
 				Url = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}"
 				Id = 'alpine-minirootfs'
 				FileName = $ArchiveName
+				Checksum = [PSCustomObject]@{
+					Algorithm = "SHA512"
+					Value = $Checksum
+				}
 			}
 		)
 	}
 
-	# Arch official "bootstrap" distribution.
+	# Arch official "bootstrap" distribution, latest version.
 	# There is only an unofficial Arch WSL available.
 	# Note: The compressed tar file must be fixed before import, the filesystem must be moved from subfolder root.x86_64 to root.
 	$ReleaseFolder = Invoke-WebRequest -Uri 'https://archive.archlinux.org/iso/' -UseBasicParsing | Select-Object -ExpandProperty Links | Select-Object -Last 1 | Select-Object -ExpandProperty href
 	$ArchiveName = "archlinux-bootstrap-$($ReleaseFolder.TrimEnd('/'))-x86_64.tar.gz"
 	if ($ReleaseFolder) {
+		$Checksum = Invoke-WebRequest -Uri "https://archive.archlinux.org/iso/${ReleaseFolder}sha1sums.txt" -UseBasicParsing | Select-String -Pattern "(?m)^(.*)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		$DistroImages += @(
 			[PSCustomObject]@{
 				Url = "https://archive.archlinux.org/iso/${ReleaseFolder}${ArchiveName}"
 				Id = 'archlinux-bootstrap'
 				FileName = $ArchiveName
+				Checksum = [PSCustomObject]@{
+					Algorithm = "SHA1"
+					Value = $Checksum
+				}
 			}
 		)
 	}
+
+	# Fedora root filesystem from official Docker images, last three releases plus the "rawhide" development/daily build.
+	# Alternative 1: Downloading from the official GitHub project used for publishing to Docker Hub.
+	# These are imports of the so-called "Container Base" published on fedoraproject.org, but with some modifications?
+	# Note: The GitHub API imposes heavy rate limiting!
+	(Invoke-RestMethod "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/branches${BranchPath}") | Where-Object -Property name -NE "master" | Sort-Object -Property name -Descending | ForEach-Object {
+		(Invoke-RestMethod "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/git/trees/$($_.commit.sha)") | Select-Object -ExpandProperty tree | Where-Object -Property path -EQ x86_64 | Select-Object -ExpandProperty sha | ForEach-Object {
+			(Invoke-RestMethod "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/git/trees/${_}") | Select-Object -ExpandProperty tree | Where-Object { $_.type -eq "blob" -and $_.path -match '(fedora-.*)[.-].*-x86_64.tar.xz' } | ForEach-Object {
+				$DistroImages += @(
+					[PSCustomObject]@{
+						Url = $_.url
+						Id = $Matches[1].ToLower()
+						FileName = $_.path
+					}
+				)
+			}
+		}
+	}
+	# Alternative 2: Downloading from official download server, which also includes both the full
+	# "Fedora Container Base" and also the more minimalistic "Fedora Container Minimal Base".
+	# TODO: These can be imported, but are not able to enter the shell, so obviously the Docker images does something extra...
+	<#
+	$BaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/"
+	$Versions = @(
+		@{
+			MajorVersion = "Rawhide"
+			BaseUrl = "${BaseUrl}development/"
+		}
+	)
+	$Versions += (Invoke-WebRequest -Uri "${BaseUrl}releases/").Links.href | Where-Object { $_ -match '^(\d+)/' } | ForEach-Object { [int] $Matches[1] } | Sort-Object -Descending | Select-Object -First 3 | ForEach-Object {
+		@{
+			MajorVersion = $_
+			BaseUrl = "${BaseUrl}releases/"
+		}
+	}
+	$Versions | ForEach-Object {
+		$MajorVersion = $_.MajorVersion
+		$BaseUrl = "$($_.BaseUrl)$(`"$($_.MajorVersion)`".ToLower())/"
+		$ChecksumFile = (Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/").Links.href | Select-String -Pattern "^Fedora-Container-.*-CHECKSUM$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
+		(Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/").Links.href | Where-Object { $_ -match "^(Fedora-Container-(?:Minimal-)?Base-${MajorVersion})-.*\.x86_64\.tar.xz$" } | ForEach-Object {
+			$Checksum = (Invoke-RestMethod -Uri "${BaseUrl}Container/x86_64/images/${ChecksumFile}") | Select-String -Pattern "(?m)^(.*)\s+\($($_.Replace(".","\."))\)\s+=\s+(.*)$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups
+			$DistroImages += @(
+				[PSCustomObject]@{
+					Url = "${BaseUrl}Container/x86_64/images/${_}"
+					Id = $Matches[1].ToLower()
+					FileName = $_
+					Checksum = [PSCustomObject]@{
+						Algorithm = $Checksum[1].Value
+						Value = $Checksum[2].Value
+					}
+				}
+			)
+		}
+	}
+	#>
+
 	$DistroImages
 }
 
@@ -1165,14 +1232,13 @@ function Get-DistroSystemInfo
 		Id = $DistroInfoText | Select-String -Pattern '^ID=(.*)' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		VersionId = $DistroInfoText | Select-String -Pattern '^(?:VERSION_ID|BUILD_ID)="?(.*?)"?$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value # Alpine 3.13.1 did not have quotes, Debian 9 did have quotes. Both have VERSION_ID. Arch have instead BUILD_ID=rolling.
 		Version = $null
-		VersionString = $DistroInfoText | Select-String -Pattern '^VERSION="(.*)"' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
-		VersionCodeName = $DistroInfoText | Select-String -Pattern '^VERSION_CODENAME=(.*)' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
-		Name = $DistroInfoText | Select-String -Pattern '^NAME="(.*)"' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
-		PrettyName = $DistroInfoText | Select-String -Pattern '^PRETTY_NAME="(.*)"' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+		VersionString = $DistroInfoText | Select-String -Pattern '^VERSION="?(.*?)"?$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+		VersionCodeName = $DistroInfoText | Select-String -Pattern '^VERSION_CODENAME="?(.*?)"?$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+		Name = $DistroInfoText | Select-String -Pattern '^NAME="?(.*?)"?$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+		PrettyName = $DistroInfoText | Select-String -Pattern '^PRETTY_NAME="(.*?)"' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		ShortName = $null
 		PackageSourceCodeName = $null
 	}
-	$DistroInfo.Version = $DistroInfo.VersionId
 	if ($DistroInfo.Id -eq 'debian') {
 		# VersionCodeName is not always present, was present in Debian 10 (buster) but not Debian 9 (stretch),
 		# but we know the names of the most relevant ones, so hard coding them based on the major version number for convenience.
@@ -1207,8 +1273,18 @@ function Get-DistroSystemInfo
 			$DistroInfo.PackageSourceCodeName = $PackageSourceCodeName
 		}
 	}
+	elseif ($DistroInfo.Id -eq 'fedora') {
+		# Fedora: We want the "rawhide" identifier for development version, storing it in VersionCodeName. For regular releases it is just the same as the VersionId number.
+		if (-not $DistroInfo.VersionCodeName) {
+			$DistroInfo.VersionCodeName = $DistroInfoText | Select-String -Pattern '^REDHAT_SUPPORT_PRODUCT_VERSION=(.*)' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+		}
+	}
 	# else:
 	#  - Alpine has a file /etc/alpine-release but does only contain the same version number as in VERSION_ID.
+
+	if (-not $DistroInfo.Version) {
+		$DistroInfo.Version = $DistroInfo.VersionId
+	}
 
 	# TODO:
 	#  - Ubuntu also has a file /etc/debian_version, representing the Debian version it is built on. E.g. In Ubuntu 20.04 it contains "bullseye/sid",
@@ -1284,8 +1360,7 @@ function New-Distro
 	if (-not $DistroImage) { throw "Distro image '${Image}' could not be found" }
 	if (Test-Distro -Name $Name) { throw "There is already a WSL distro with name '${Name}'" }
 	if (Test-Path -LiteralPath $Destination) { throw "Destination already exists" }
-	#$Destination = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Destination)
-	$Destination = Get-Directory -Path $Destination -Create
+	$Destination = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Destination)
 	$WorkingDirectory = Get-Directory -Path $WorkingDirectory -Create
 	$TempDirectory = New-TempDirectory -Path $WorkingDirectory
 	try
@@ -1298,6 +1373,16 @@ function New-Distro
 			$DownloadFullName = Join-Path $TempDirectory $DistroImage.FileName
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
+			if ($DistroImage.Checksum) {
+				# Verify checksum
+				$ExpectedHash = $DistroImage.Checksum.Value
+				Write-Verbose "Verifying checksum..."
+				$ActualHash = Get-FileHash -LiteralPath $DownloadFullName -Algorithm ($DistroImage.Checksum.Algorithm) | Select-Object -ExpandProperty Hash
+				if ($ExpectedHash -ne $ActualHash) {
+					throw "Checksum ($($DistroImage.Checksum.Algorithm)) mismatch: Expected ${ExpectedHash} but was ${ActualHash}"
+				}
+				Write-Verbose "$($DistroImage.Checksum.Algorithm) match: ${ExpectedHash}"
+			}
 			if ($DownloadFullName.EndsWith(".appx")) {
 				# Extract installer archive from appx installer (requires 7-Zip)
 				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
@@ -1324,6 +1409,17 @@ function New-Distro
 				if (-not (Test-Path -LiteralPath $FileSystemArchiveFullName)) { throw "Cannot find extracted ${FileSystemArchiveFullName}" }
 				&$SevenZipPath rn "$FileSystemArchiveFullName" root.x86_64 . | Out-Verbose
 				if ($LastExitCode -ne 0) { throw "Updating of ${FileSystemArchiveFullName} failed with error $LastExitCode" }
+			} elseif ($DistroImage.Id -like 'fedora-*') {
+				# Fedora download is compressed archive file that must be uncompressed, before the .tar can be imported.
+				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
+				if (-not $SevenZipPath) {
+					Write-Host "Getting required 7-Zip utility (temporary)..."
+					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+				}
+				&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose
+				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+				$FileSystemArchiveFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadFullName))
+				if (-not (Test-Path -LiteralPath $FileSystemArchiveFullName)) { throw "Cannot find extracted ${FileSystemArchiveFullName}" }
 			} else {
 				$FileSystemArchiveFullName = $DownloadFullName
 			}
@@ -1332,8 +1428,16 @@ function New-Distro
 			# Import archive to WSL
 			Write-Host "Creating WSL distro '${Name}'..."
 			Write-Verbose "Importing from archive ${FileSystemArchiveFullName}"
+			#$Destination = Get-Directory -Path $Destination -Create
 			wsl.exe --import $Name $Destination $FileSystemArchiveFullName
-			if ($LastExitCode -ne 0) { throw "Import of image archive failed (error code ${LastExitCode})" }
+			if ($LastExitCode -ne 0) {
+				# Avoid empty destination being left behind when error, it will prevent a new attempt with same path!
+				#if (Test-Path -LiteralPath $Destination) {
+				#	Write-Host "Import of image archive failed (error code ${LastExitCode}), deleting destination ${Destination}"
+				#	Remove-Item -Path $Destination
+				#}
+				throw "Import of image archive failed (error code ${LastExitCode})"
+			}
 			Remove-Item -LiteralPath $FileSystemArchiveFullName
 
 			# Optionally create user
@@ -1364,8 +1468,8 @@ function New-Distro
 						Write-Warning "Failed to create user (error code ${LastExitCode})"
 					}
 				}
-				elseif ($DistroImage.Id -eq 'archlinux-bootstrap') {
-					# Arch
+				elseif ($DistroImage.Id -eq 'archlinux-bootstrap' -or $DistroImage.Id -like 'fedora-*') {
+					# Arch/Fedora
 					# Add user with required non-empty password. Use low-level command 'useradd',
 					# since 'adduser' is not built-in. Make it a member of group "wheel".
 					Write-Host "Creating user '${UserName}' as member of wheel group (you will be prompted for password)..."
@@ -1450,14 +1554,6 @@ function New-Distro
 			}
 			Write-Host "WSL distro '$(if($Name){$Name}else{'(default)'})' has been created with $($DistroInfo.ShortName)"
 		}
-	}
-	catch
-	{
-		# Avoid empty destination being left behind when error, it will prevent a new attempt with same path!
-		if (Test-Path -LiteralPath $Destination) {
-			Remove-Item -Path $Destination
-		}
-		throw
 	}
 	finally
 	{
@@ -2446,6 +2542,64 @@ function Install-VpnKit
 							wsl.exe @WslOptions --user root @Commands | Out-Verbose
 							if ($LastExitCode -ne 0) {
 								Write-Warning "Failed to install packages (error code ${LastExitCode}), you must manually ensure required packages '$($Packages.Name -join `"', '`")' gets installed"
+								break
+							}
+						}
+					}
+					finally
+					{
+						if ($TempDirectory -and (Test-Path -LiteralPath $TempDirectory)) {
+							Remove-Item -LiteralPath $TempDirectory -Recurse
+						}
+					}
+				}
+			} elseif ($DistroInfo.Id -eq 'fedora') {
+				# Fedora is missing socat, and also iproute with dependencies psmisc og libmnl, required by the shell scripts.
+				$SocatStatus = wsl.exe @WslOptions rpm --query socat
+				if ($LastExitCode -eq 0) {
+					Write-Verbose "Skipping installation of package 'socat' because it is already present: ${SocatStatus}"
+				} else {
+					# TODO: Only packages for stable versions are available, so if distro image is based on Rawhide there is not a match - but should be use highest version number?
+					if ($DistroInfo.VersionCodeName -eq 'rawhide') {
+						$DownloadBaseUrl = 'https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Everything/x86_64/os/Packages/'
+					} else {
+						$DownloadBaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/releases/$($DistroInfo.VersionCodeName)/Everything/x86_64/os/Packages/"
+					}
+					$WorkingDirectory = Get-Directory -Path $WorkingDirectory -Create
+					$TempDirectory = New-TempDirectory -Path $WorkingDirectory
+					try
+					{
+						$Packages = 'socat', 'psmisc', 'libmnl', 'iproute'
+						# Downloading all first, then installing in a single command
+						Write-Host "Downloading packages '$($Packages -join `"', '`")'..."
+						$PackageDownloadNames = @()
+						foreach ($Package in $Packages) {
+							$DownloadUrl = "${DownloadBaseUrl}$($Package[0])/"
+							$DownloadName = Invoke-WebRequest -Uri $DownloadUrl -UseBasicParsing | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "^${Package}-\d.*\.x86_64\.rpm$" } | Select-Object -First 1 # Pick first with a version number, skip "-devel", "-static" or other variants
+							$DownloadUrl += $DownloadName
+							if (-not $DownloadName) {
+								Write-Warning "Unable to download package '$($Package.Name)', you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
+							} else {
+								$DownloadFullName = Join-Path $TempDirectory $DownloadName
+								Save-File -Url "${DownloadUrl}" -Path $DownloadFullName
+								if (-not (Test-Path -LiteralPath $DownloadFullName)) {
+									Write-Warning "Failed to download package '$($Package.Name)', you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
+									break
+								}
+								$PackageDownloadNames += $DownloadName
+							}
+						}
+						if ($Packages.Count -eq $PackageDownloadNames.Count) { # If some of them failed to be downloaded, don't even try!
+							$TempDirectoryRoot = [System.IO.Path]::GetPathRoot($TempDirectory)
+							$TempDirectoryWslMount = "/mnt/$($TempDirectory.Replace($TempDirectoryRoot, $TempDirectoryRoot.ToLower().Replace(':','')).Replace('\','/'))"
+							Write-Host "Installing packages '$($Packages -join `"', '`")'..."
+							$Commands = 'rpm', '--install'
+							foreach($PackageDownloadName in $PackageDownloadNames) {
+								$Commands += "${TempDirectoryWslMount}/${PackageDownloadName}"
+							}
+							wsl.exe @WslOptions --user root @Commands | Out-Verbose
+							if ($LastExitCode -ne 0) {
+								Write-Warning "Failed to install packages (error code ${LastExitCode}), you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
 								break
 							}
 						}

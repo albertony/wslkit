@@ -163,10 +163,12 @@ Currently supported linux distributions (and tested versions):
 - OpenSUSE (untested)
 - Alpine (tested version 3.13.1)
 - Arch (tested version 2021.02.01)
+- Fedora (tested Fedora 34, also tested Rawhide but it does not mount /mnt/c so Install-VpnKit fails).
 
-Note that the Alpine and Arch distributions listed above are not regular WSL images,
-but are the official "minimal root filesystem" distribution from alpinelinux.org
-and "bootstrap" distribution from archlinux.org.
+Note that the Alpine, Arch and Fedora distributions listed above are not regular WSL images.
+Alpine is the official "minimal root filesystem" distribution from alpinelinux.org,
+and Arch is the official bootstrap distribution archlinux.org. Fedora is the
+root filesystem taken from the official Docker container image.
 
 ### Linux configuration
 
@@ -193,7 +195,7 @@ script header for more details. To upgrade to latest stable version of Debian, j
 run the script without arguments: `/mnt/c/Wsl/debian-upgrade`. See also example
 [below](#debian).
 
-The Alpine and Arch images are not WSL images, but official plain root filsystem
+The Alpine, Arch and Fedora images are not WSL images, but official plain root filsystem
 image distributions. These will always be installed from the latest released
 version, but will generally have less initial configuration than the WSL images. If
 using the Arch Linux image there are a few steps that needs to be performed before
