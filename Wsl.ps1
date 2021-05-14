@@ -1413,7 +1413,7 @@ function New-Distro
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
 			if ($DistroImage.Checksum) {
 				# Verify checksum
-				$ExpectedHash = $DistroImage.Checksum.Value
+				$ExpectedHash = $DistroImage.Checksum.Value.ToUpper()
 				Write-Host "Verifying checksum..."
 				Write-Verbose "Expected `"${ExpectedHash}`""
 				$ActualHash = Get-FileHash -LiteralPath $DownloadFullName -Algorithm ($DistroImage.Checksum.Algorithm) | Select-Object -ExpandProperty Hash
@@ -1490,6 +1490,8 @@ function New-Distro
 				#     passwd <username>
 				# - Alpine only have 'adduser' (not useradd) by default.
 				# - Arch only have 'useradd', not 'adduser' by default.
+				# - Fedora have 'useradd', and 'adduser' as an alias to it, and does not have 'passwd' to set password interactive,
+				#   but have 'chpasswd' so can prompt for password using 'read -sp' or in PowerShell and send it in.
 				if ($DistroImage.Id -eq 'alpine-minirootfs') {
 					# Alpine
 					# Add user without password (there is not sudo here by default, so empty password will not be a problem),
@@ -1497,7 +1499,7 @@ function New-Distro
 					# See: https://github.com/agowa338/WSL-DistroLauncher-Alpine/blob/master/DistroLauncher/DistroSpecial.h
 					Write-Host "Creating user '${UserName}' (without password)..."
 					# Must use adduser command, useradd command is not available before installing package 'shadow'
-					wsl.exe --distribution $Name sh -c "adduser --disabled-password --gecos '' ${UserName}" # Note: Needed the sh -c workaround for it to accept arguments!
+					wsl.exe --distribution $Name --exec sh -c "adduser --disabled-password --gecos '' ${UserName}" # Note: Needed the sh -c workaround for it to accept arguments!
 					if ($LastExitCode -eq 0) {
 						# Add to groups in separate command, since adduser does not support the --groups option,
 						# and also there is no usermod command by default so must use adduser or addgroup (which are
@@ -1513,7 +1515,7 @@ function New-Distro
 					# Add user with required non-empty password. Use low-level command 'useradd',
 					# since 'adduser' is not built-in. Make it a member of group "wheel".
 					Write-Host "Creating user '${UserName}' as member of wheel group (you will be prompted for password)..."
-					wsl.exe --distribution $Name sh -c "useradd --create-home --groups wheel ${UserName}"
+					wsl.exe --distribution $Name --exec sh -c "useradd --create-home --groups wheel ${UserName}"
 					wsl.exe --distribution $Name passwd $UserName
 					if ($LastExitCode -ne 0) {
 						Write-Warning "Failed to set password (error code ${LastExitCode})"
@@ -1526,10 +1528,10 @@ function New-Distro
 					# Command 'passwd' is not included by default, so uses 'chpasswd' instead,
 					# prompting for the password in PowerShell and pipes it into chpasswd in wsl.
 					Write-Host "Creating user '${UserName}' as member of wheel group (you will be prompted for password)..."
-					wsl.exe --distribution $Name sh -c "useradd --create-home --groups wheel ${UserName}"
+					wsl.exe --distribution $Name --exec sh -c "useradd --create-home --groups wheel ${UserName}"
 					$Credential = Get-Credential -UserName $UserName -Message "Create password for user ${Name}"
 					if ($Credential -and $Credential.GetNetworkCredential().Password) {
-						wsl.exe --distribution $Name sh -c "echo `"$($Credential.UserName):$($Credential.GetNetworkCredential().Password)`" | chpasswd"
+						wsl.exe --distribution $Name --exec sh -c "echo \`"$($Credential.UserName):$($Credential.GetNetworkCredential().Password)\`" | chpasswd"
 						if ($LastExitCode -ne 0) {
 							Write-Warning "Failed to set password (error code ${LastExitCode})"
 						}
@@ -1547,7 +1549,7 @@ function New-Distro
 					# user home, and also possible replace shell /bin/sh with shell /bin/bash if that is wanted,
 					# and it does not prompt for password so must explicit call 'passwd' command.
 					#   useradd --create-home --shell /bin/bash <username>
-					wsl.exe --distribution $Name sh -c "adduser --quiet --disabled-password --gecos '' ${UserName}" # Note: Needed the sh -c workaround for it to accept arguments!
+					wsl.exe --distribution $Name --exec sh -c "adduser --quiet --disabled-password --gecos '' ${UserName}" # Note: Needed the sh -c workaround for it to accept arguments!
 					if ($LastExitCode -eq 0) {
 						wsl.exe --distribution $Name passwd $UserName
 						if ($LastExitCode -ne 0) {
@@ -1626,7 +1628,7 @@ function New-Distro
 # Delete a WSL distribution.
 # .DESCRIPTION
 # This will remove it from WSL by executing `wsl.exe --unregister`, and then delete
-# the disk path as returned by Get-DistroPath.
+# the disk path as returned by Get-DistroPath (if exists).
 # .LINK
 # New-Distro
 # Get-DistroPath
@@ -1644,19 +1646,33 @@ function Remove-Distro
 		[switch] $Force
 	)
 	$Name = GetDistroNameOrDefault -Name $Name
-	$DistroInfo = Get-DistroSystemInfo -Name $Name # Note: This will start up the distro if not running, but to avoid removing the wrong distro its good to show some info?
 	$Item = GetDistroRegistryItem -Name $Name
 	if (-not $Item) { throw "Distro '${Name}' not found in registry" }
 	if (IsDistroItemPackageInstalled -Item $Item) {
 		throw "This distro seems to be installed as a standard UWP app, it should be removed by uninstalling from Settings > Apps & Features"
 	}
 	$Path = $Item | Select-Object -ExpandProperty BasePath | ForEach-Object { Get-StandardizedPath $_ }
-	if (-not $Path) { throw "Base path for distro '${Name}' not found" }
-	if ($Force -or $PSCmdlet.ShouldContinue("Are you sure you want to unregister WSL distro '${Name}' [$($DistroInfo.ShortName)] and delete base directory in path '${Path}'?", "Unregister WSL distro")) {
-		Write-Host "Removing WSL distro '${Name}' [$($DistroInfo.ShortName)]..."
+	$DistroInfo = $null
+	$RemovePath = $false
+	if (-not $Path) {
+		Write-Warning "Base path for distro '${Name}' not configured" # Warning, we still want to be able to unregister it (if corrupt etc.)
+	} elseif (-not (Test-Path -LiteralPath $Path)) {
+		Write-Warning "Base path for distro '${Name}' does not exist" # Warning, we still want to be able to unregister it (if corrupt etc.)
+	} else {
+		$RemovePath = $true
+		try {
+			$DistroInfo = Get-DistroSystemInfo -Name $Name # Note: This will start up the distro if not running, but to avoid removing the wrong distro its good to show some info?
+		} catch {
+			Write-Warning $_.Exception.Message # Unable to get distro info, maybe its corrupt, maybe the distro disk file is no longer present - we still want to be able to unregister it to get rid of it!
+		}
+	}
+	if ($Force -or $PSCmdlet.ShouldContinue("Are you sure you want to unregister WSL distro '${Name}'$(if($DistroInfo){`" [$($DistroInfo.ShortName)]`"})$(if($RemovePath){`" and delete base directory in path '${Path}'`"})?", "Unregister WSL distro")) {
+		Write-Host "Removing WSL distro '${Name}'$(if($DistroInfo){`" [$($DistroInfo.ShortName)]`"})..."
 		wsl.exe --unregister $Name | Out-Null # This prints "Unregistering..." unless redirecting
 		if ($LastExitCode -ne 0) { throw "Unregistering distro failed (error code ${LastExitCode})" }
-		Remove-Item -LiteralPath $Path -Recurse
+		if ($RemovePath) {
+			Remove-Item -LiteralPath $Path -Recurse
+		}
 	}
 }
 
