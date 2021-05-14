@@ -151,8 +151,25 @@ about the pipe based networking used by Docker with VPNKit:
 [Plumbing inside Docker for Windows](https://github.com/moby/vpnkit/blob/master/docs/ethernet.md#plumbing-inside-docker-for-windows).
 The method used by wsl-vpnkit is very similar, although instead of using Hyper-V sockets
 between the host and VM, it uses regular Windows named pipes, with help of the
-[socat](https://linux.die.net/man/1/socat) utility in the WSL VM and the [npiperelay](https://github.com/jstarks/npiperelay)
-utility on the Windows host.
+[socat](https://linux.die.net/man/1/socat) utility in the WSL VM and the
+[npiperelay](https://github.com/jstarks/npiperelay) utility on the Windows host.
+
+#### Docker
+
+If you have Docker Desktop installed, it will include its own copy of the
+same `vpnkit.exe` as used by the `wsl-vpnkit` system. Upon start/stop it will
+terminate any running `vpnkit.exe` processes, which means it will also terminate
+such a process started by `wsl-vpnkit`, and you will need to restart it to get
+it to work again. A workaround introduced in the original
+[github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit)
+is to rename `vpnkit.exe` to `wsl-vpnkit.exe`, which avoids Docker Desktop
+from terminating it.
+
+The installation performed by the `Wsl.ps1`, functions `New-VpnKit`
+and `Install-VpnKit`, customizes the path to `vpnkit.exe` in the
+`wsl-vpnkit` launcher script. It does not currently use perform the rename,
+but keeps the original filename `vpnkit.exe`, and may therefore still be
+interfered by Docker Desktop. It is under consideration to change this.
 
 ### Linux distributions
 
