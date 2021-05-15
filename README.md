@@ -128,7 +128,7 @@ system, the core parts used here are actually taken from the Docker Desktop tool
 
 The problem with the Hyper-V based networking that is default in WSL, is that
 it can easily be problematic with VPN, and will be entirely blocked by some
-antivirus/firewall software etc. See also [this](https://github.com/moby/vpnkit#why-is-this-needed).
+antivirus/firewall software etc. Read more [here](https://github.com/moby/vpnkit#why-is-this-needed).
 
 The main part of this functionality is a shell script `wsl-vpnkit` from repository
 [github.com/albertony/wsl-vpnkit](https://github.com/albertony/wsl-vpnkit). This is
@@ -331,8 +331,12 @@ by the script itself).
 
 ### Creating additional distribution
 
-You can install as many WSL distributions as you want, just make sure to give them a unique name and a separate
-directory for the disk image file.
+You can install as many WSL distributions as you want, just make sure to give them a unique name and a
+separate directory for the disk image file.
+
+If you are using the VPNKit networking, you only need the full installation on one distro, since (in WSL2)
+all distros run in a single shared virtual machine. Any additional distros can make use of the same
+networking by just pointing the nameserver configuration to it.
 
 1. Create additional WSL distribution, this time with the Ubuntu 20.04 image.
 
@@ -579,7 +583,8 @@ for running them on the host, and with some more detail:
   ```
 - Make the `vpnkit.exe` executable accessible from the `wsl-vpnkit` script, just as
   with `npiperelay.exe` described above, but now with script variable `VPNKIT_PATH`.
-- Configure DNS as described [below](#vpnkit-manual-configuration).
+- Configure DNS as described in the [VPNKit manual configuration](#vpnkit-manual-configuration)
+  section, below.
 - Finally, run the `wsl-vpnkit` script from the WSL distro to start the network services,
   and you should have connectivity from WSL through the host's network connection as long
   as this script is running!
@@ -630,11 +635,23 @@ Arch:
 ### VPNKit manual configuration
 
 To use the VPNKit networking you need to install the complete VPNKit package (`Install-VpnKit`
-without parameter `-ConfigurationOnly`) on at least one distribution, and run it from there.
-You can only run a single instance of it at a time.
-Any number of distributions can use the same networking services, simply by configuring them
-to use its address `192.168.67.1` as nameserver. To do this you must add `nameserver 192.168.67.1` into
-file `/etc/resolv.conf`, and also `generateResolvConf = false` in section `[network]` of file `/etc/wsl.conf`.
+without parameter `-ConfigurationOnly`) on (at least) one distribution, and run it from there.
+Then you can use it from any number of distributions, by simply changing their DNS configuring
+to go through the same `vpnkit` service.
+
+In WSL2 all distros run in a single shared virtual machine. This means they all share the same
+virtual network adapters. When the `wsl-vpnkit` script is started it will change the ip route
+of the `eth1` network adapter to connect through the `vpnkit` gateway. If you check in another
+distro you will see that the same ip route is configured for "its" `eth1`.
+
+When the `wsl-vpnkit` script is started from one distro, it sets up the ip route and the
+process pipe relay from the shared virtual machine to the host machine. The only thing missing
+for a distribution to work through this connection is the DNS configuration, which is a
+distribution-specific configuration. By default the vpnkit gateway is bound to IP address
+`192.168.67.1`, so to configure the distro to use this as the nameserver you must
+add `nameserver 192.168.67.1` into file `/etc/resolv.conf`, and also `generateResolvConf = false`
+in section `[network]` of file `/etc/wsl.conf`.
+
 The VPNKit program directory created by `New-VpnKit` contains predefined `resolv.conf` and `wsl.conf`
 that you can copy into you distro. Running the `Install-VpnKit` with parameter `-ConfigurationOnly`
 will basically do the same, just that it tries to avoid overwriting any existing configuration
