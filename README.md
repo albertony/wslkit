@@ -215,13 +215,14 @@ run the script without arguments: `/mnt/c/Wsl/debian-upgrade`. See also example
 The Alpine, Arch and Fedora images are not WSL images, but official plain root filsystem
 image distributions. These will always be installed from the latest released
 version, but will generally have less initial configuration than the WSL images. If
-using the Arch Linux image there are a few steps that needs to be performed before
+using the Arch Linux image there are quite a few steps that needs to be performed before
 being able to start using `pacman` to install additional software. The supplied
-script `arch-init` will perform the required steps for you (read the comments for
+script `arch-setup` will perform the required steps for you (read the comments for
 description of what it does), just run the script without arguments:
-`/mnt/c/Wsl/arch-init`.  See also example [below](#arch).
+`/mnt/c/Wsl/arch-setup`. See also example [below](#arch). There are also different
+types of setup scripts for setting up other distributions, see [below](#setting-up-the-wsl-distribution).
 
-The script `arch-install-dev-cpp-python-qt` can be executed after `arch-init` to install
+The script `arch-install-dev-cpp-python-qt` can be executed after `arch-setup` to install
 a set of packages relevant for a specific C++, Python and Qt development environment,
 including: Git (with LFS), SSL, SSH, GCC, CMake, Ninja, Qt5, Python (with numpy, pylint,
 pytest, pyside2 and ipython).
@@ -321,13 +322,21 @@ at a time. See script comments for details.
 #### Arch
 
 Configure locale, sudo and pacman, perform full upgrade of all installed packages,
-and install some very basic tools (such as sudo, sed, tar, nano, some of which required
-by the script itself).
+install some very basic tools (such as sudo, sed, tar, nano, some of which required
+by the script itself), and configure bash.
 
 ```
-/mnt/c/Wsl/arch-init
+/mnt/c/Wsl/arch-setup
 ```
 
+#### Fedora
+
+Configure locale, perform full upgrade of all installed packages, and install some very
+basic tools (such as wget, nano, unzip, findutils), and configure bash.
+
+```
+/mnt/c/Wsl/fedora-setup
+```
 
 ### Creating additional distribution
 

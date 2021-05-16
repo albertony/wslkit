@@ -2,7 +2,7 @@
 #
 # Configure locale.
 #
-# Generate the default en_us.UTF-8 locale.
+# Generate the default en_US.UTF-8 locale.
 # In the bootstrap archive as of 2021.02.01 this is the default locale, but it has not
 # been generated, so there will be some issues until this has been done!
 # NOTE: Requires gzip installed, so must wait until after packages above are installed!

@@ -1,9 +1,11 @@
 #!/bin/sh
 #
-# Configure shell environment.
+# Configure bash shell environment.
 #
 # In WSL environment, make sure prompt and terminal title contains the WSL distro
 # name instead of the hostname, which is that of the WSL host.
+# Uses the default prompt from Arch and Fedora as starting point.
+# Also configure history, add some aliases etc.
 # Do it for all users with a home directory, including root user.
 # Assuming running as root, cannot change only for some "current user".
 #
@@ -14,6 +16,13 @@
 # Verify running as root (not relying on sudo which may not be installed yet).
 if [ ${EUID:-$(id -u)} -ne 0 ]; then
     echo 'Please run this script as root'
+    exit 1
+fi
+# Does not work when just running with sudo from normal user, since the environment
+# variables are then stripped to a minimimum and specifically the WSL_DISTRO_NAME
+# will not be available!
+if [ -n "$SUDO_USER" ]; then
+    echo 'Please run this script as actual root, not sudo!'
     exit 1
 fi
 
@@ -73,14 +82,46 @@ cp --no-clobber /etc/skel/.bashrc /etc/skel/.bash_profile /root
             echo "$prompt" >> "$file"
         fi
     fi
-    # Configure ls alias (already exists by default)
+    # Configure shell history:
+    # - Append local history to file instead of overwriting, to keep history from multiple parallel sessions.
+    # - Do not record repeated commands more than once, and do not record commands prefixed with space.
+    # - Record max 1000 entries in memory (bash default is 500 if not overridden by global config)
+    # - Read/write max 2000 entries from/to file (bash default is to match history size if not overridden).
+    if cat "$file" | grep --quiet --line-regexp --fixed-strings "shopt -s histappend"; then
+        echo "Skipping histappend shell option: Already configured"
+    else
+        echo "Adding histappend shell option"
+        echo "shopt -s histappend" >> "$file"
+    fi
+    if cat "$file" | grep --quiet --line-regexp --fixed-strings "HISTCONTROL=ignoreboth"; then
+        echo "Skipping history control variable: Already configured"
+    else
+        echo "Adding history control variable"
+        sed --in-place --regexp-extended 's/^(\s*(export\s+)?HISTCONTROL=.*)$/#\1/' "$file"
+        echo "HISTCONTROL=ignoreboth" >> "$file"
+    fi
+    if cat "$file" | grep --quiet --line-regexp --fixed-strings "HISTSIZE=1000"; then
+        echo "Skipping history size variable: Already configured"
+    else
+        echo "Adding history size variable"
+        sed --in-place --regexp-extended 's/^(\s*(export\s+)?HISTSIZE=.*)$/#\1/' "$file"
+        echo "HISTSIZE=1000" >> "$file"
+    fi
+    if cat "$file" | grep --quiet --line-regexp --fixed-strings "HISTFILESIZE=2000"; then
+        echo "Skipping history file size variable: Already configured"
+    else
+        echo "Adding history file size variable"
+        sed --in-place --regexp-extended 's/^(\s*(export\s+)?HISTFILESIZE=.*)$/#\1/' "$file"
+        echo "HISTFILESIZE=2000" >> "$file"
+    fi
+    # Configure ls alias for colored output by default (already exists by default in Arch)
     if cat "$file" | grep --quiet --line-regexp --fixed-strings "alias ls='ls --color=auto'"; then
         echo "Skipping ls auto color alias: Already configured"
     else
         echo "Adding ls auto color alias"
         echo "alias ls='ls --color=auto'" >> "$file"
     fi
-    # Configure grep alias (does not exist by default)
+    # Configure grep alias colored output by default (does not exist by default)
     if cat "$file" | grep --quiet --line-regexp --fixed-strings "alias grep='grep --colour=auto'"; then
         echo "Skipping grep auto color alias: Already configured"
     else

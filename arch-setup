@@ -73,8 +73,8 @@ echo "Configuring sudo..."
 . "${0}-sudo"
 
 echo
-echo "Configuring shell environment"
-. "${0}-shell"
+echo "Configuring bash shell environment"
+. "$(dirname ${0})/bash-setup"
 
 echo
 echo Done

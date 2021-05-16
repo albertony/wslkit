@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# Fedora Linux in WSL basic configuration and installation of the basic tools.
+#
+# Written for WSL import of docker root filesystem from Fedora 34.
+# To be executed immediately after a clean install, but can also be run later
+# and repeated without creating trouble.
+#
+# Script must be run by actual root user, not using sudo from regular user.
+#
+# Based on separate "sub-scripts" for each main action performed (documented below),
+# which can also be executed separately.
+#
+
+# Verify running as root (not relying on sudo which may not be installed yet).
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
+
+echo
+echo "Configuring packages..."
+. "${0}-packages"
+
+echo
+echo "Configuring locale..."
+. "${0}-locale"
+
+echo
+echo "Configuring bash shell environment"
+. "$(dirname ${0})/bash-setup"
+
+echo
+echo Done

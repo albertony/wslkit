@@ -1,0 +1,48 @@
+#!/bin/sh
+#
+# Configure locale.
+# In Fedora the locales are installed as regular packages with name prefix glibc-langpack.
+# There are also some higher order language support meta packages with name prefix "langpacks",
+# which ensures installation of translations, additional fonts and input methods, as well as
+# the locale via the appropriate glibc-langpack package.
+#
+# Fedora 34 has installed the following packages by default:
+# - glibc-minimal-langpack
+# - langpacks-en_GB
+#   - With dependencies: langpacks-core-en_GB, langpacks-core-font-en, fonts-filesystem, dejavu-sans-fonts
+#   - Without the weak dependency: glibc-langpack-en
+# The result is that it only contains C and POSIX locales, which are part of the glibc-minimal-langpack.
+# The en_US.UTF-8 locale is part of glibc-langpack-en. Normally when installing the langpacks-en (for en_US)
+# or langpacks-en_GB (for en_GB) the glibc-langpack-en package is automatically installed, but the default
+# image has excluded this one. Removing the preinstalled langpacks_en_GB and the re-installing it would
+# include it, but here we remove it and simply just install the glibc-langpack-en to get just the locale part.
+#
+# The result should be that en_US.UTF-8 is automatically activated as the new locale, instead of C.UTF-8.
+#
+
+# Verify running as root (not relying on sudo which may not be installed yet).
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
+
+echo
+echo "Removing language support packages..."
+if ! sudo dnf remove langpacks-*; then
+    echo "Failed!"
+    exit 1
+fi
+
+echo
+echo "Installing english locale package..."
+if ! sudo dnf install glibc-langpack-en; then
+    echo "Failed!"
+    exit 1
+fi
+
+echo
+echo "Cleanup package cache..."
+if ! dnf clean packages; then
+    echo "Failed!"
+    exit 1
+fi

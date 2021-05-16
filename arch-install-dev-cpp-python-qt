@@ -13,7 +13,7 @@
 # user.
 #
 # NOTE: Assumes basic tools are already installed, including sudo.
-# Run script ./arch-init first to ensure this!
+# Run script ./arch-setup first to ensure this!
 #
 # NOTE: Does not install package group "base-devel", which contains a lot of the
 # relevant packages (gcc, binutils, make, grep, sed, sudo etc), instead just installs

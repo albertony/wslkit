@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# Perform full package upgrade, and installs some basic packages missing.
+#
+
+# Verify running as root (not relying on sudo which may not be installed yet).
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
+
+echo
+echo "Upgrading packages..."
+if ! dnf upgrade --refresh; then
+    echo "Failed!"
+    exit 1
+fi
+
+echo
+echo "Installing basic packages..."
+if ! sudo dnf install \
+    findutils \
+    unzip \
+    wget \
+    nano \
+    iputils \
+    iproute \
+    procps-ng
+then
+    echo "Failed!"
+    exit 1
+fi
+
+echo
+echo "Cleanup package cache..."
+if ! dnf clean packages; then
+    echo "Failed!"
+    exit 1
+fi

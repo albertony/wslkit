@@ -14,7 +14,7 @@
 # user.
 #
 # NOTE: Assumes basic tools are already installed, including sudo.
-# Run script ./arch-init first to ensure this!
+# Run script ./arch-setup first to ensure this!
 #
 
 echo "Updating package database, upgrading existing packages, and installing new packages..."
