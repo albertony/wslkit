@@ -130,7 +130,7 @@
 #   https://github.com/moby/vpnkit/blob/master/docs/ethernet.md#plumbing-inside-docker-for-windows
 #
 # Note:
-# - Tested on Debian 9 (stretch) and Ubuntu 20.04 LTS (Focal Fossa)
+# - Tested on Debian 9 (stretch), Debian 10 (buster) and Ubuntu 20.04 LTS (Focal Fossa)
 #   official WSL images from Microsoft Store, Alpine 3.13.1 official
 #   "Minimal root filesystem" distribution from alpinelinux.org,
 #   and Arch 2021.02.01 official "bootstrap" distribution.
@@ -267,6 +267,28 @@ function Get-StandardizedPath
 		$Path.Substring(4)
 	} else {
 		$Path
+	}
+}
+
+# .SYNOPSIS
+# Utility function to get the final download URI and file name behind a possibly redirected uri.
+function Resolve-DownloadUri
+{
+	param([Parameter(Mandatory,ValueFromPipeline)][uri]$Uri)
+	$Request = [System.Net.WebRequest]::Create($Uri)
+	$Response = $Request.GetResponse()
+	try {
+		$ResponseUri = $Response.ResponseUri
+		if ($ResponseUri.Segments[-1].EndsWith('/')) {
+			throw "The specified uri does not point to a file: ${ResponseUri}"
+		}
+		[pscustomobject]@{
+			Uri = $ResponseUri.AbsoluteUri
+			FileName = $ResponseUri.Segments[-1]
+		}
+	} finally {
+		$Response.Close()
+		$Response.Dispose()
 	}
 }
 
@@ -433,6 +455,20 @@ function ValidateDistroName
 	if ($Name) {
 		$ValidSet = Get-Distro
 		if ($Name -notin $ValidSet) { throw [System.Management.Automation.PSArgumentException] "The value `"${_}`" is not a known image. Only `"$($ValidSet -join '", "')`" can be specified." }
+	}
+	$true
+}
+
+# .SYNOPSIS
+# Helper function to validate value of parameter accepting distro user credential.
+# .DESCRIPTION
+# Enable by prepending parameter with:
+# [ValidateScript({ValidateDistroUser $_})]
+function ValidateDistroUser
+{
+	param ([pscredential] $User)
+	if ($User.UserName -notmatch '^[a-z_][a-z0-9_-]*[$]?$') { # Not strict requirement in all distros, but highly recommended to only use usernames that begin with a lower case letter or an underscore, followed by lower case letters, digits, underscores, or dashes. They can end with a dollar sign.
+		throw [System.Management.Automation.PSArgumentException] "The user name `"$($_.UserName)`" is not valid. Must begin with a lower case letter or an underscore, followed by lower case letters, digits, underscores, or dashes. May end with a dollar sign."
 	}
 	$true
 }
@@ -1137,7 +1173,6 @@ function Get-DistroImage
 		[PSCustomObject]@{
 			Url = $_ # The URL to be used for downloading.
 			Id = $Id # A unique id to be used in for selecting distro image in this script.
-			FileName = "${Id}.appx" # The filename that will be downloaded. The URL may be redirected and not contain name. Using the extension to know how it can be installed.
 		}
 	})
 	# Get urls with hostname github.com.
@@ -1162,7 +1197,6 @@ function Get-DistroImage
 			[PSCustomObject]@{
 				Url = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}"
 				Id = 'alpine-minirootfs'
-				FileName = $ArchiveName
 				Checksum = [PSCustomObject]@{
 					Algorithm = "SHA512"
 					Value = $Checksum
@@ -1182,7 +1216,6 @@ function Get-DistroImage
 			[PSCustomObject]@{
 				Url = "https://archive.archlinux.org/iso/${ReleaseFolder}${ArchiveName}"
 				Id = 'archlinux-bootstrap'
-				FileName = $ArchiveName
 				Checksum = [PSCustomObject]@{
 					Algorithm = "SHA1"
 					Value = $Checksum
@@ -1203,7 +1236,6 @@ function Get-DistroImage
 					[PSCustomObject]@{
 						Url = $_.download_url
 						Id = $Matches[1].ToLower()
-						FileName = $_.name
 						#TODO: No checksum available?
 					}
 				)
@@ -1237,7 +1269,6 @@ function Get-DistroImage
 				[PSCustomObject]@{
 					Url = "${BaseUrl}Container/x86_64/images/${_}"
 					Id = $Matches[1].ToLower()
-					FileName = $_
 					Checksum = [PSCustomObject]@{
 						Algorithm = $Checksum[1].Value
 						Value = $Checksum[2].Value
@@ -1375,11 +1406,15 @@ function New-Distro
 		[Alias("Source")]
 		[string] $Image,
 
-		# Optional name of additional user to create. If not specified then only the default root user will be available from start.
+		# Optionally create regular user as default user, instead of the built-in root.
+		# If not credentials are supplied in parameter -User, an interactive prompt will be shown.
+		[switch] $CreateUser,
+
+		# Optional credentials of regular user to create as default user, instead of the built-in root.
+		# Parameter -CreateUser is implied.
 		[Parameter(Mandatory=$false)]
-		[ValidatePattern('^[a-z_][a-z0-9_-]*[$]?$')] # Not strict requirement in all distros, but highly recommended to only use usernames that begin with a lower case letter or an underscore, followed by lower case letters, digits, underscores, or dashes. They can end with a dollar sign.
-		[ValidateLength(1, 32)] # 32 characters max
-		[string] $UserName,
+		[ValidateScript({ValidateDistroUser $_})]
+		[pscredential] $User,
 
 		# Optional working directory where downloads will be temporarily placed. Default is current directory.
 		[Parameter(Mandatory=$false)] [ValidateNotNullOrEmpty()] [string] $WorkingDirectory = (Get-Location -PSProvider FileSystem).ProviderPath,
@@ -1403,8 +1438,10 @@ function New-Distro
 
 			# Download
 			Write-Host "Downloading distro image '$($DistroImage.Id)'..."
-			$DownloadUrl = $DistroImage.Url
-			$DownloadFullName = Join-Path $TempDirectory $DistroImage.FileName
+			$Download = Resolve-DownloadUri $DistroImage.Url
+			$DownloadUrl = $Download.Uri
+			$DownloadName = $Download.FileName
+			$DownloadFullName = Join-Path $TempDirectory $DownloadName
 			if (([uri]$DownloadUrl).Host -eq 'api.github.com') {
 				Save-File -Url $DownloadUrl -Path $DownloadFullName -Credential $GitHubCredential
 			} else {
@@ -1422,6 +1459,19 @@ function New-Distro
 					throw "Checksum ($($DistroImage.Checksum.Algorithm)) mismatch: Expected ${ExpectedHash} but was ${ActualHash}"
 				}
 				Write-Verbose "$($DistroImage.Checksum.Algorithm) match: ${ExpectedHash}"
+			}
+			if ($DownloadFullName.EndsWith(".AppxBundle")) {
+				# Extract appx installer from AppxBundle, then fake that as the downloaded file and continue with extracting it
+				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
+				if (-not $SevenZipPath) {
+					Write-Host "Getting required 7-Zip utility (temporary)..."
+					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+				}
+				&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose
+				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+				$DownloadFullName = Get-Item (Join-Path $TempDirectory 'DistroLauncher-Appx_*_x64.appx') | Select-Object -ExpandProperty FullName
+				if (-not $DownloadFullName) { throw "Cannot find extracted DistroLauncher-Appx_*_x64.appx" }
+				# Continue with .appx extraction
 			}
 			if ($DownloadFullName.EndsWith(".appx")) {
 				# Extract installer archive from appx installer (requires 7-Zip)
@@ -1481,107 +1531,128 @@ function New-Distro
 			Remove-Item -LiteralPath $FileSystemArchiveFullName
 
 			# Optionally create user
-			if ($UserName -and $PSCmdlet.ShouldProcess($UserName, "Add user")) {
-				# TODO:
-				# - MS reference launcher: Uses 'adduser' with password prompt:
-				#     adduser --quiet --gecos '' <username>
-				# - Debian: Uses 'adduser' without password prompt, and then sets required password with separate 'passwd' command:
-				#     adduser --quiet --disabled-password --gecos '' <username>
-				#     passwd <username>
-				# - Alpine only have 'adduser' (not useradd) by default.
-				# - Arch only have 'useradd', not 'adduser' by default.
-				# - Fedora have 'useradd', and 'adduser' as an alias to it, and does not have 'passwd' to set password interactive,
-				#   but have 'chpasswd' so can prompt for password using 'read -sp' or in PowerShell and send it in.
-				if ($DistroImage.Id -eq 'alpine-minirootfs') {
-					# Alpine
-					# Add user without password (there is not sudo here by default, so empty password will not be a problem),
-					# and add to customized list of groups.
-					# See: https://github.com/agowa338/WSL-DistroLauncher-Alpine/blob/master/DistroLauncher/DistroSpecial.h
-					Write-Host "Creating user '${UserName}' (without password)..."
-					# Must use adduser command, useradd command is not available before installing package 'shadow'
-					wsl.exe --distribution $Name --exec sh -c "adduser --disabled-password --gecos '' ${UserName}" # Note: Needed the sh -c workaround for it to accept arguments!
-					if ($LastExitCode -eq 0) {
-						# Add to groups in separate command, since adduser does not support the --groups option,
-						# and also there is no usermod command by default so must use adduser or addgroup (which are
-						# basically the same) to add one by one.
-						Write-Host "Setting as member of wheel and some other standard groups..."
-						wsl.exe --distribution $Name for g in adm floppy cdrom tape wheel ping`; do adduser $UserName `$g`; done
-					} else {
-						Write-Warning "Failed to create user (error code ${LastExitCode})"
-					}
+			if (($CreateUser -or $User) -and $PSCmdlet.ShouldProcess("$(if($User){$User.UserName}else{'Prompt for credential'})", "Create user")) {
+				if (-not $User) {
+					do {
+						try { $User = Get-Credential -Message "Enter credential for user to be created" -UserName $User.UserName } catch {}
+					} while (
+						# Repeat while:
+						# - Username given but is not valid
+						# - Username given, but no password, and user confirms the intention was not passwordless user (which is problematic on systems with sudo)
+						# - Credential prompt aborted, and user confirms that the intention is still to create a user
+						($User -and -not (ValidateDistroUser $User)) `
+						-or ($User -and $User.Password.Length -eq 0 -and -not $PSCmdlet.ShouldContinue("No password given. Users without password may be problematic to use with sudo.`nDo you want to create user `"$($User.UserName)`" without password?", "Create user")) `
+						-or (-not $User -and -not $PSCmdlet.ShouldContinue("No credentials given, do you want to skip creation of user?", "Create user"))
+					)
 				}
-				elseif ($DistroImage.Id -eq 'archlinux-bootstrap') {
-					# Arch
-					# Add user with required non-empty password. Use low-level command 'useradd',
-					# since 'adduser' is not built-in. Make it a member of group "wheel".
-					Write-Host "Creating user '${UserName}' as member of wheel group (you will be prompted for password)..."
-					wsl.exe --distribution $Name --exec sh -c "useradd --create-home --groups wheel ${UserName}"
-					wsl.exe --distribution $Name passwd $UserName
-					if ($LastExitCode -ne 0) {
-						Write-Warning "Failed to set password (error code ${LastExitCode})"
+				if ($User) {
+					# First create user without password, then optionally set the password using chpasswd command.
+					# Note:
+					# - MS reference launcher: Uses 'adduser' with password prompt:
+					#     adduser --quiet --gecos '' <username>
+					# - Debian: Uses 'adduser' without password prompt, and then sets required password with separate 'passwd' command:
+					#     adduser --quiet --disabled-password --gecos '' <username>
+					#     passwd <username>
+					# - Alpine only have 'adduser' (not useradd) by default. No sudo by default, so user with empty password will not be a problem.
+					# - Arch only have 'useradd', not 'adduser' by default.
+					# - Fedora have 'useradd', and 'adduser' as an alias to it, and does not have 'passwd' to set password interactive.
+					# - All distros have 'chpasswd', which can be used to encrypt and set password from plaintext, so we can prompt
+					#   for password ourself using 'read -sp' or in PowerShell and send it into it.
+					$UserCreated = $false
+					if ($DistroImage.Id -eq 'alpine-minirootfs') {
+						# Alpine
+						# Add user as member of customized list of groups.
+						# See: https://github.com/agowa338/WSL-DistroLauncher-Alpine/blob/master/DistroLauncher/DistroSpecial.h
+						Write-Host "Creating user '$($User.UserName)'..."
+						# Must use adduser command, useradd command is not available before installing package 'shadow'
+						wsl.exe --distribution $Name --exec sh -c "adduser --disabled-password --gecos '' $($User.UserName)" # Note: Needed the sh -c workaround for it to accept arguments!
+						if ($LastExitCode -eq 0) {
+							$UserCreated = $true
+							# Add to groups in separate command, since adduser does not support the --groups option,
+							# and also there is no usermod command by default so must use adduser or addgroup (which are
+							# basically the same) to add one by one.
+							Write-Host "Setting as member of wheel and some other standard groups..."
+							wsl.exe --distribution $Name for g in adm floppy cdrom tape wheel ping`; do adduser $User.UserName `$g`; done
+						} else {
+							Write-Warning "Failed to create user (error code ${LastExitCode})"
+						}
 					}
-				}
-				elseif ($DistroImage.Id -like 'fedora-*') {
-					# Fedora
-					# Add user with required non-empty password. Use low-level command 'useradd',
-					# since 'adduser' is not built-in. Make it a member of group "wheel".
-					# Command 'passwd' is not included by default, so uses 'chpasswd' instead,
-					# prompting for the password in PowerShell and pipes it into chpasswd in wsl.
-					Write-Host "Creating user '${UserName}' as member of wheel group (you will be prompted for password)..."
-					wsl.exe --distribution $Name --exec sh -c "useradd --create-home --groups wheel ${UserName}"
-					$Credential = Get-Credential -UserName $UserName -Message "Create password for user ${Name}"
-					if ($Credential -and $Credential.GetNetworkCredential().Password) {
-						wsl.exe --distribution $Name --exec sh -c "echo \`"$($Credential.UserName):$($Credential.GetNetworkCredential().Password)\`" | chpasswd"
-						if ($LastExitCode -ne 0) {
-							Write-Warning "Failed to set password (error code ${LastExitCode})"
+					elseif ($DistroImage.Id -eq 'archlinux-bootstrap') {
+						# Arch
+						# Add user with required non-empty password. Use low-level command 'useradd',
+						# since 'adduser' is not built-in. Make it a member of group "wheel".
+						Write-Host "Creating user '$($User.UserName)' as member of wheel group..."
+						wsl.exe --distribution $Name --exec sh -c "useradd --create-home --groups wheel $($User.UserName)"
+						if ($LastExitCode -eq 0) {
+							$UserCreated = $true
+						} else {
+							Write-Warning "Failed to create user (error code ${LastExitCode})"
+						}
+					}
+					elseif ($DistroImage.Id -like 'fedora-*') {
+						# Fedora
+						# Add user with with low-level command 'useradd', since 'adduser' is not built-in,
+						# and make it a member of group "wheel".
+						Write-Host "Creating user '$($User.UserName)' as member of wheel group..."
+						wsl.exe --distribution $Name --exec sh -c "useradd --create-home --groups wheel $($User.UserName)"
+						if ($LastExitCode -eq 0) {
+							$UserCreated = $true
+						} else {
+							Write-Warning "Failed to create user (error code ${LastExitCode})"
 						}
 					}
 					else {
-						Write-Warning "No password set"
+						# Debian and related (Ubuntu)
+						# Add user with required non-empty password (as Debian does it, perhaps to avoid trouble with sudo later?)
+						Write-Host "Creating user '$($User.UserName)'..."
+						# Using 'adduser' command.
+						# Could also have used the low-level 'useradd': But must then explicitely specify to create
+						# user home, and also possible replace shell /bin/sh with shell /bin/bash if that is wanted
+						# (also it does not prompt for password so must explicit call 'passwd' command, but this is not relevant here).
+						#   useradd --create-home --shell /bin/bash <username>
+						wsl.exe --distribution $Name --exec sh -c "adduser --quiet --disabled-password --gecos '' $($User.UserName)" # Note: Needed the sh -c workaround for it to accept arguments!
+						if ($LastExitCode -eq 0) {
+							$UserCreated = $true
+							Write-Host "Setting as member of sudo and some other standard groups..."
+							# Using the list of default groups from Microsoft's WSL Distro Launcher Reference Implementation
+							# (see https://github.com/microsoft/WSL-DistroLauncher/blob/master/DistroLauncher/DistributionInfo.cpp),
+							# which is currently: adm,cdrom,sudo,dip,plugdev. Debian's official WSL distro installer uses this
+							# list unchanged, Ubuntu adds additional groups: dialout,floppy,audio,video,netdev.
+							$UserGroups = "adm,cdrom,sudo,dip,plugdev"
+							if ($DistroImage.Id.StartsWith('ubuntu')) { # Ubuntu default installers adds some additional groups
+								$UserGroups += ",dialout,floppy,audio,video,netdev"
+							}
+							# Using low-level usermod. Could also have used adduser (or its alias addgroup), it appends
+							# by default but does only support adding one group at a time.
+							wsl.exe --distribution $Name usermod --append --groups $UserGroups $User.UserName
+							if ($LastExitCode -ne 0) {
+								#wsl.exe --distribution $Name deluser $UserName # Delete the user if the group add command failed (like MS launcher template does)
+								Write-Warning "Failed to add user to groups (error code ${LastExitCode})"
+							}
+						} else {
+							Write-Warning "Failed to create user (error code ${LastExitCode})"
+						}
 					}
-				}
-				else {
-					# Debian and related (Ubuntu)
-					# Add user with required non-empty password (as Debian does it, perhaps to avoid trouble with sudo later?)
-					Write-Host "Creating user '${UserName}' (you will be prompted for password)..."
-					# Using 'adduser' command.
-					# Could also have used the low-level 'useradd': But must then explicitely specify to create
-					# user home, and also possible replace shell /bin/sh with shell /bin/bash if that is wanted,
-					# and it does not prompt for password so must explicit call 'passwd' command.
-					#   useradd --create-home --shell /bin/bash <username>
-					wsl.exe --distribution $Name --exec sh -c "adduser --quiet --disabled-password --gecos '' ${UserName}" # Note: Needed the sh -c workaround for it to accept arguments!
-					if ($LastExitCode -eq 0) {
-						wsl.exe --distribution $Name passwd $UserName
-						if ($LastExitCode -ne 0) {
-							Write-Warning "Failed to set password (error code ${LastExitCode})"
+					if ($User -and $UserCreated) {
+						# Set password
+						if ($User.Password.Length -gt 0) {
+							wsl.exe --distribution $Name --exec sh -c "echo \`"$($User.UserName):$($User.GetNetworkCredential().Password)\`" | chpasswd > /dev/null"
+							if ($LastExitCode -ne 0) {
+								Write-Warning "Failed to set password (error code ${LastExitCode})"
+							}
 						}
-						Write-Host "Setting as member of sudo and some other standard groups..."
-						# Using the list of default groups from Microsoft's WSL Distro Launcher Reference Implementation
-						# (see https://github.com/microsoft/WSL-DistroLauncher/blob/master/DistroLauncher/DistributionInfo.cpp),
-						# which is currently: adm,cdrom,sudo,dip,plugdev. Debian's official WSL distro installer uses this
-						# list unchanged, Ubuntu adds additional groups: dialout,floppy,audio,video,netdev.
-						$UserGroups = "adm,cdrom,sudo,dip,plugdev"
-						if ($DistroImage.Id.StartsWith('ubuntu')) { # Ubuntu default installers adds some additional groups
-							$UserGroups += ",dialout,floppy,audio,video,netdev"
+						else {
+							Write-Warning "No password set"
 						}
-						# Using low-level usermod. Could also have used adduser (or its alias addgroup), it appends
-						# by default but does only support adding one group at a time.
-						wsl.exe --distribution $Name usermod --append --groups $UserGroups $UserName
-						if ($LastExitCode -ne 0) {
-							#wsl.exe --distribution $Name deluser $UserName # Delete the user if the group add command failed (like MS launcher template does)
-							Write-Warning "Failed to add user to groups (error code ${LastExitCode})"
+						# Register as default WSL user for this distro
+						$UserId = wsl.exe --distribution $Name --user $User.UserName --exec id -u # Note: On Alpine "id --user" does not work, but shortform "id -u" does!
+						if ($LastExitCode -eq 0) {
+							Write-Host "Setting as default user..."
+							GetDistroRegistryItem -Name $Name | Set-ItemProperty -Name DefaultUid -Value $UserId
+						} else {
+							Write-Warning "Unable to set as default user (could not find uid)"
 						}
-					} else {
-						Write-Warning "Failed to create user (error code ${LastExitCode})"
 					}
-				}
-				# Register as default WSL user for this distro
-				$UserId = wsl.exe --distribution $Name --user $UserName --exec id -u # Note: On Alpine "id --user" does not work, but shortform "id -u" does!
-				if ($LastExitCode -eq 0) {
-					Write-Host "Setting as default user..."
-					GetDistroRegistryItem -Name $Name | Set-ItemProperty -Name DefaultUid -Value $UserId
-				} else {
-					Write-Warning "Unable to set as default user (could not find uid)"
 				}
 			}
 
@@ -2575,7 +2646,7 @@ function Install-VpnKit
 				}
 			} elseif ($DistroInfo.Id -eq 'arch') {
 				# Arch is missing socat, and also iproute2, as well as sed and grep required by the shell scripts.
-				$SocatStatus = wsl.exe @WslOptions pacman --query socat
+				$SocatStatus = wsl.exe @WslOptions pacman --query socat 2>&1
 				if ($LastExitCode -eq 0) {
 					Write-Verbose "Skipping installation of package 'socat' because it is already present: ${SocatStatus}"
 				} else {

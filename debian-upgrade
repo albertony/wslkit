@@ -73,15 +73,10 @@
 #   again will retry the upgrade!
 #
 
-RELEASE_CHANNEL=${1:-${RELEASE_CHANNEL:-stable}}
-
-echo "Channel: ${RELEASE_CHANNEL}"
-
 if ! cat /etc/os-release | grep -q '^ID=debian$'; then
     echo "This is not a Debian system!"
     exit 1
 fi
-echo "Checking versions..."
 
 # Not straight forward to get accurate version information of current system,
 # but the most important thing is to detect when there are differences in the
@@ -108,13 +103,36 @@ echo "Checking versions..."
 #    - Version:
 #        - Read from /etc/debian_version. It may contain major.minor version number (stable releases)
 #          or it may be the complete codename as in the pretty name!
+echo "Looking up current release information..."
+RELEASE_CHANNEL=${1:-${RELEASE_CHANNEL:-stable}}
+echo "Channel: ${RELEASE_CHANNEL}"
 CURRENT_CODENAME=$(cat /etc/os-release | sed -rn 's/^VERSION="[0-9]+\s+\((.*)\)"/\1/p')
 [ -z "$CURRENT_CODENAME" ] && CURRENT_CODENAME=$(cat /etc/os-release | sed -rn 's/^PRETTY_NAME="Debian GNU\/Linux ([0-9]+ )?\(?([a-z]*)(\/[a-z]*)?\)?"/\2/p')
 [ -z "$CURRENT_CODENAME" ] && echo "ERROR: Unable to find installed release codename" && exit 1
-
 CURRENT_VERSION=$(cat /etc/debian_version)
 [ -z "$CURRENT_VERSION" ] && echo "ERROR: Unable to find installed version info" && exit 1
+echo "Installed version: $CURRENT_VERSION ($CURRENT_CODENAME)"
 
+# Start by updating package cache
+echo
+echo "Loading package index..."
+if ! sudo apt update ; then
+    echo "ERROR: Update command returned with error code $?"
+    exit 1
+fi
+
+# Make sure wget is installed, because we need it to further decide what to do.
+# On clean WSL install of Debian 10 (Buster) version 10.8 it is missing!
+echo
+echo "Ensuring latest version of wget is installed..."
+if ! sudo apt install wget ; then
+    echo "ERROR: Update command returned with error code $?"
+    exit 1
+fi
+
+# Fetch release information
+echo
+echo "Fetching latest release information..."
 LATEST_CODENAME=$(wget --quiet --timeout=10 --output-document=- http://deb.debian.org/debian/dists/${RELEASE_CHANNEL}/Release | grep '^Codename:' | cut -d' ' -f2)
 [ -z "$LATEST_CODENAME" ] && echo "ERROR: Unable to find latest release codename" && exit 1
 
@@ -124,15 +142,14 @@ LATEST_VERSION=$(wget --quiet --timeout=10 --output-document=- http://deb.debian
 [ -z "$LATEST_VERSION" ] && echo "Latest release version info not available, but this can be normal for releases newer than current stable"
 
 echo "Available version: ${LATEST_VERSION:-?} ($LATEST_CODENAME)"
-echo "Installed version: $CURRENT_VERSION ($CURRENT_CODENAME)"
 echo
 
 if [ "$LATEST_CODENAME" = "$CURRENT_CODENAME" ]; then
     # No major version change.
     # Always run a simple package update just in case.
-    echo "Updating packages..."
-    if ! sudo apt update || ! sudo apt upgrade ; then
-        echo "ERROR: Update commands returned with error code $?"
+    echo "No major upgrade available, updating packages..."
+    if ! sudo apt upgrade ; then
+        echo "ERROR: Upgrade command returned with error code $?"
         exit 1
     fi
     echo
@@ -149,17 +166,17 @@ else
     [ -z "$CURRENT_SOURCE_CHANNEL" ] && echo "FAILED: Unable to find current configured main package source version codename" && exit 1
 
     if [ "$CURRENT_SOURCE_CHANNEL" = "$LATEST_CODENAME" ]; then
-        # Note: In this case we do not want to run simple package update (sudo apt update && sudo apt upgrade),
+        # Note: In this case we do not want to run simple package update (sudo apt upgrade),
         # because we want to use the full upgrade procedure since the package sources have changed!
-        echo "WARNING: Main package source are already configured for latest release, will not update it:"
+        echo "WARNING: Main package source is already configured for latest release, will not update it:"
         echo
         cat /etc/apt/sources.list
         echo
     else
         # Run a simple package update for existing release
         echo "Updating packages..."
-        if ! sudo apt update || ! sudo apt upgrade ; then
-            echo "ERROR: Update commands returned with error code $?"
+        if ! sudo apt upgrade ; then
+            echo "ERROR: Upgrade command returned with error code $?"
             exit 1
         fi
         echo
@@ -201,7 +218,7 @@ else
     fi
     # Run full upgrade from changed package source
     # Note: Using 'apt-get upgrade' instead of 'apt upgrade' in this case, as recommended by debian!
-    if ! sudo apt update || ! sudo apt-get upgrade || ! sudo apt full-upgrade ; then
+    if ! sudo apt-get upgrade || ! sudo apt full-upgrade ; then
         echo "ERROR: Upgrade commands returned with error code $?"
         exit 1
     fi

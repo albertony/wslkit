@@ -175,7 +175,9 @@ interfered by Docker Desktop. It is under consideration to change this.
 
 Currently supported linux distributions (and tested versions):
 - Ubuntu (tested version 20.04 LTS "Focal Fossa")
-- Debian (tested version 9 "Stretch", upgraded to versjon 10 "Buster" and version 11 "Bullseye")
+- Debian (tested with version 10 "Buster", originally created when the distro download
+  was version 9 "Stretch", and then tested that with upgrade to version 10 "Buster"
+  and also version 11 "Bullseye")
 - Kali (untested)
 - OpenSUSE (untested)
 - Alpine (tested version 3.13.1)
@@ -203,14 +205,16 @@ some additional shell scripts specialized for some of the supported images. Some
 are for initial setup, others are for more specific workflows such as installing a
 full development environment with Python and GCC.
 
-The Debian Linux image currently published on Microsoft is quite old, currently
+~~The Debian Linux image currently published on Microsoft is quite old, currently
 still on Debian 9 (stretch), so you will probably want to upgrade it to at least
-Debian 10 (buster), which is the currently "stable" version of Debian. You can use
-the included shell script `debian-upgrade` to do this. This script can be used for
-regular package updates as well as major release upgrades. Read the comments in the
-script header for more details. To upgrade to latest stable version of Debian, just
-run the script without arguments: `/mnt/c/Wsl/debian-upgrade`. See also example
-[below](#debian).
+Debian 10 (buster), which is the currently "stable" version of Debian.~~
+The Debian Linux image currently published on Microsoft is Debian 10 (buster),
+which is the currently "stable" version of Debian. When Debian 11 moves to stable,
+you can use the included shell script `debian-upgrade` to do the upgrade. This script
+can be used for regular package updates as well as major release upgrades. Read the
+comments in the script header for more details. To upgrade to latest stable version
+of Debian, just run the script without arguments: `/mnt/c/Wsl/debian-upgrade`.
+See also example [below](#debian).
 
 The Alpine, Arch and Fedora images are not WSL images, but official plain root filsystem
 image distributions. These will always be installed from the latest released
@@ -310,8 +314,9 @@ just refer to them through the automatic mount back to host.
 
 #### Debian
 
-Upgrade from Debian 9 (stretch) to Debian 10 (buster), which is the latest
-stable version. Note that the script (without arguments) will upgrade to latest stable,
+When distro image was still Debian 9 (stretch), but latest stable version was Debian 10 (buster),
+the following script would perform the upgrade.
+Note that the script (without arguments) will upgrade to latest stable,
 but if this is more than one major version step up then you should upgrade one version
 at a time. See script comments for details.
 
@@ -608,10 +613,10 @@ most distributions. In addition you may need some dependent packages that are
 also missing.
 
 Debian:
-- The official image being on "stretch" still, you needed the following:
-    - [packages.debian.org/stretch/amd64/libwrap0/download](https://packages.debian.org/stretch/amd64/libwrap0/download)
-    - [packages.debian.org/stretch/amd64/libssl1.1/download](https://packages.debian.org/stretch/amd64/libssl1.1/download)
-    - [packages.debian.org/stretch/amd64/socat/download](https://packages.debian.org/stretch/amd64/socat/download)
+- The official image being on "buster", you needed the following:
+    - [packages.debian.org/buster/amd64/libwrap0/download](https://packages.debian.org/buster/amd64/libwrap0/download)
+    - [packages.debian.org/buster/amd64/libssl1.1/download](https://packages.debian.org/buster/amd64/libssl1.1/download)
+    - [packages.debian.org/buster/amd64/socat/download](https://packages.debian.org/buster/amd64/socat/download)
 - Just download the files and then from wsl refer to the files by path.
 Example (not the actual file names, don't know if order is important, but I did dependencies first and `socat` last):
 `apt-get install libwrap0.deb libssl1.1.deb socat.deb`
