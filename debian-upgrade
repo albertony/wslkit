@@ -125,8 +125,8 @@ fi
 # On clean WSL install of Debian 10 (Buster) version 10.8 it is missing!
 echo
 echo "Ensuring latest version of wget is installed..."
-if ! sudo apt install wget ; then
-    echo "ERROR: Update command returned with error code $?"
+if ! sudo apt install wget; then
+    echo "ERROR: install command returned with error code $?"
     exit 1
 fi
 
@@ -175,7 +175,7 @@ else
     else
         # Run a simple package update for existing release
         echo "Updating packages..."
-        if ! sudo apt upgrade ; then
+        if ! sudo apt upgrade; then
             echo "ERROR: Upgrade command returned with error code $?"
             exit 1
         fi
@@ -233,4 +233,3 @@ if ! sudo apt clean ; then
     echo "WARNING: Cleanup of package cache failed with error code $?"
     exit 1
 fi
-

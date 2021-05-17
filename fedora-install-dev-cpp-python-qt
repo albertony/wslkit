@@ -1,0 +1,68 @@
+#!/bin/sh
+#
+# Installs development tools, such as git, python and gcc.
+#
+
+echo "Installing packages..."
+if ! sudo dnf install \
+    `# Diff command` \
+    diffutils \
+    `# SSL toolkit` \
+    openssl-devel \
+    `# SSH client (is also a dependency of git)` \
+    openssh-clients \
+    `# Git client` \
+    git \
+    `# Qt 5 (contains also dependencies of pyside2)` \
+    qt5-qtbase-devel \
+    qt5-qtcharts-devel \
+    `# Python 3 libraries (is also optional dependency of boost for python bindings)` \
+    python3-numpy \
+    python3-pylint \
+    python3-pytest \
+    python3-ipython \
+    python3-pyside2 \
+    `# Ninja build-system` \
+    ninja-build \
+    `# CMake build-system generator` \
+    cmake \
+    `# GNU C++ compiler` \
+    gcc-c++ \
+     `# GDB debugger` \
+    gdb \
+    `# Boost headers and libraries` \
+    boost-devel \
+    `# Armadillo headers and libraries` \
+    armadillo-devel \
+    `# DLib headers and libraries, with dependencies libpng-devel, libjpeg-devel, and libsq3-devel` \
+    dlib-devel \
+    libpng-devel \
+    libjpeg-devel \
+    libsq3-devel
+    `# Doctest headers and libraries` \
+    doctest-devel
+then
+    echo "Failed!"
+    exit 1
+fi
+
+# Possible additions
+#    `# Git client LFS extension (not used for now)` \
+#    git-lfs \
+#    `# CCache (to trade disk space for recompilation speed, not installed for now to avoid it being detected and used before configured properly)` \
+#    ccache \
+#    `# Valgrind (not used for now, ant this is quite large - 320MiB installed)` \
+#    valgrind \
+#
+# # If installing ccache, could then also limit the size from default 5GB to 500MB.
+# # Note: This will only have effect for the current user, and will be stored as
+# # configuration file ~/.config/ccache/ccache.conf, so must run the script as the
+# # intended dev user and not root!
+# ccache --set-config max_size=500M
+
+echo
+echo "Cleanup package cache..."
+if ! dnf clean packages; then
+    echo "Failed!"
+    exit 1
+fi

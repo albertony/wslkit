@@ -22,7 +22,7 @@
 #
 
 echo "Updating package database, upgrading existing packages, and installing new packages..."
-sudo pacman --sync --refresh --sysupgrade --needed "$@" \
+if ! sudo pacman --sync --refresh --sysupgrade --needed "$@" \
     `# Diff command` \
     diffutils \
     `# SSL toolkit (is also dependency of openssh, git and others)` \
@@ -41,7 +41,7 @@ sudo pacman --sync --refresh --sysupgrade --needed "$@" \
     python-pytest \
     ipython \
     pyside2 \
-    `# Boost headers and libraries (includes dependency boost-libs which is also dependency of gcc via source-highlight` \
+    `# Boost headers and libraries (includes dependency boost-libs which is also dependency of gcc via source-highlight)` \
     boost \
     `# Ninja build-system` \
     ninja \
@@ -51,6 +51,10 @@ sudo pacman --sync --refresh --sysupgrade --needed "$@" \
     gcc \
     `# GDB debugger` \
     gdb
+then
+    echo "Failed!"
+    exit 1
+fi
 
 # Possible additions
 #    `# Git client LFS extension (not used for now)` \

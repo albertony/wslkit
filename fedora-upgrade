@@ -1,0 +1,120 @@
+#!/bin/sh
+#
+# Update script for Fedora.
+#
+# This script will look-up the current installed and the latest available stable release versions.
+# A release version number to upgrade to can be specified as argument, if not it defaults to latest.
+# If current is already at the specified version then a simple package upgrade is performed.
+# If on a different version then a major upgrade is performed.
+#
+# NOTE:
+# - Be careful if there are more than one major version between the current
+#   and the target version. You sould probably upgrade one version at a time.
+#   Specify version number as command line argument to control this.
+# - Performs most, but not all recommended steps for a major upgrade, as that
+#   involves manual inspection, but usually this can be skipped or done after
+#   the upgrade.
+# - Read the upgrade guide to see recommended steps to be performed, and if
+#   there are special considerations for the specific release version:
+#   https://docs.fedoraproject.org/en-US/quick-docs/upgrading-fedora-online/
+# - Script is interactive! Will prompt user before doing any changes!
+#
+
+if ! cat /etc/os-release | grep -q '^ID=fedora$'; then
+    echo "This is not a Fedora system!"
+    exit 1
+fi
+
+# Perform a normal package upgrade
+# Alternatives: Force sync of all repositories with --refresh? Only perform upgrade-minimal?
+echo "Upgrading packages..."
+if ! sudo dnf upgrade; then
+    echo "Failed!"
+    exit 1
+fi
+
+# Make sure wget is installed, because we need it to further decide what to do.
+# On clean WSL install of Fedora 34 it is missing!
+echo
+echo "Ensuring latest version of wget is installed..."
+if ! sudo dnf install wget; then
+    echo "ERROR: Update command returned with error code $?"
+    exit 1
+fi
+
+# Look up current release
+echo
+echo "Looking up current release information..."
+CURRENT_RELEASE=$(cat /etc/os-release | sed -rn 's/^VERSION_ID=(.*)$/\1/p')
+[ -z "$CURRENT_RELEASE" ] && echo "ERROR: Unable to find installed release version" && exit 1
+echo "Installed release: $CURRENT_RELEASE"
+
+# Find latest release
+echo
+echo "Fetching latest release information..."
+LATEST_RELEASE=$(wget --quiet --timeout=10 --output-document=- https://dl.fedoraproject.org/pub/fedora/linux/releases/ | sed --quiet --regexp-extended 's/^.*<a href="([0-9]+)\/">.*$/\1/p' | sort --numeric-sort | tail -1)
+[ -z "$LATEST_RELEASE" ] && echo "ERROR: Unable to find latest release version" && exit 1
+echo "Latest release: $LATEST_RELEASE"
+
+# Decide target release, from optional script parameter, default to latest release
+echo
+echo "Deciding target release..."
+TARGET_RELEASE=${1:-${TARGET_RELEASE:-$LATEST_RELEASE}}
+echo "Target release: $TARGET_RELEASE"
+
+# Always run a simple package update just in case.
+echo
+echo "Updating packages..."
+if ! sudo dnf upgrade; then
+    echo "ERROR: Upgrade command returned with error code $?"
+    exit 1
+fi
+
+if [ "$TARGET_RELEASE" = "$CURRENT_RELEASE" ]; then
+    # No major version change.
+    echo
+    echo "System updated, still on release version $CURRENT_RELEASE"
+else
+    echo
+    echo "Performing major upgrade from ${CURRENT_RELEASE} to ${TARGET_RELEASE}..."
+
+    echo
+    echo "Removing unused dependencies..."
+    if ! sudo dnf autoremove; then
+        echo "Failed!"
+        exit 1
+    fi
+
+    echo
+    echo "Cleaning package cache..."
+    if ! sudo dnf clean all; then
+        echo "Failed!"
+        exit 1
+    fi
+
+    echo
+    echo "Upgrading to new release..."
+    if ! dnf --releasever=${TARGET_RELEASE} --setopt=deltarpm=false distro-sync; then
+        echo "Failed!"
+        exit 1
+    fi
+
+    echo "Looking up new release information..."
+    UPGRADED_RELEASE=$(cat /etc/os-release | sed -rn 's/^VERSION_ID=(.*)$/\1/p')
+    if [ -n "$UPGRADED_RELEASE" ]; then
+        if [ "$TARGET_RELEASE" = "$UPGRADED_RELEASE" ]; then
+            echo "System upgraded from release ${CURRENT_RELEASE} to ${UPGRADED_RELEASE}"
+        else
+            echo "WARNING: Installed release seems to be ${UPGRADED_RELEASE} instead of expected ${TARGET_RELEASE}"
+        fi
+    else
+        echo "WARNING: Unable to find version of installed release"
+    fi
+fi
+
+echo
+echo "Cleanup package cache..."
+if ! dnf clean packages; then
+    echo "Failed!"
+    exit 1
+fi

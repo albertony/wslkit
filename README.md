@@ -343,6 +343,16 @@ basic tools (such as wget, nano, unzip, findutils), and configure bash.
 /mnt/c/Wsl/fedora-setup
 ```
 
+Perform upgrade to latest version. If no new major release then performs a normal
+package upgrade. If there is a new major release it performs a full system upgrade
+to the new release. If there is more than one major version step up you should upgrade
+one version at a time, by specifying target version as argument.
+See script comments for details.
+
+```
+/mnt/c/Wsl/fedora-upgrade
+```
+
 ### Creating additional distribution
 
 You can install as many WSL distributions as you want, just make sure to give them a unique name and a
