@@ -33,15 +33,6 @@ if ! sudo dnf upgrade; then
     exit 1
 fi
 
-# Make sure wget is installed, because we need it to further decide what to do.
-# On clean WSL install of Fedora 34 it is missing!
-echo
-echo "Ensuring latest version of wget is installed..."
-if ! sudo dnf install wget; then
-    echo "ERROR: Update command returned with error code $?"
-    exit 1
-fi
-
 # Look up current release
 echo
 echo "Looking up current release information..."
@@ -49,18 +40,26 @@ CURRENT_RELEASE=$(cat /etc/os-release | sed -rn 's/^VERSION_ID=(.*)$/\1/p')
 [ -z "$CURRENT_RELEASE" ] && echo "ERROR: Unable to find installed release version" && exit 1
 echo "Installed release: $CURRENT_RELEASE"
 
-# Find latest release
-echo
-echo "Fetching latest release information..."
-LATEST_RELEASE=$(wget --quiet --timeout=10 --output-document=- https://dl.fedoraproject.org/pub/fedora/linux/releases/ | sed --quiet --regexp-extended 's/^.*<a href="([0-9]+)\/">.*$/\1/p' | sort --numeric-sort | tail -1)
-[ -z "$LATEST_RELEASE" ] && echo "ERROR: Unable to find latest release version" && exit 1
-echo "Latest release: $LATEST_RELEASE"
-
-# Decide target release, from optional script parameter, default to latest release
+# Get target release
 echo
 echo "Deciding target release..."
-TARGET_RELEASE=${1:-${TARGET_RELEASE:-$LATEST_RELEASE}}
-echo "Target release: $TARGET_RELEASE"
+TARGET_RELEASE=$1
+if [ -n "$TARGET_RELEASE" ]; then
+    echo "Using target release from argument"
+    echo "Target release: $TARGET_RELEASE"
+else
+    echo "Target release argument not specified, finding latest release..."
+    # Make sure wget is installed, on clean WSL install of Fedora 34 it is missing!
+    echo "Ensuring wget is installed..."
+    if ! sudo dnf install wget; then
+        echo "ERROR: Update command returned with error code $?"
+        exit 1
+    fi
+    LATEST_RELEASE=$(wget --quiet --timeout=10 --output-document=- https://dl.fedoraproject.org/pub/fedora/linux/releases/ | sed --quiet --regexp-extended 's/^.*<a href="([0-9]+)\/">.*$/\1/p' | sort --numeric-sort | tail -1)
+    [ -z "$LATEST_RELEASE" ] && echo "ERROR: Unable to find latest release version" && exit 1
+    echo "Target/latest release: $LATEST_RELEASE"
+    TARGET_RELEASE=$LATEST_RELEASE
+fi
 
 # Always run a simple package update just in case.
 echo
@@ -70,13 +69,29 @@ if ! sudo dnf upgrade; then
     exit 1
 fi
 
+echo
+echo "Cleanup package cache..."
+if ! dnf clean packages; then
+    echo "Failed!"
+    exit 1
+fi
+
 if [ "$TARGET_RELEASE" = "$CURRENT_RELEASE" ]; then
     # No major version change.
     echo
-    echo "System updated, still on release version $CURRENT_RELEASE"
+    echo "Packages updated, no major upgrade, still on release version $CURRENT_RELEASE"
 else
     echo
-    echo "Performing major upgrade from ${CURRENT_RELEASE} to ${TARGET_RELEASE}..."
+    echo "Major upgrade from release version ${CURRENT_RELEASE} to ${TARGET_RELEASE}"
+    echo "Note: If more than one version difference, consider upgrading to each version"
+    echo "as separate upgrades instead!"
+
+    echo
+    read -p "Do you want to continue? [Y/n]" choice
+    case "$choice" in
+    ""|y|Y ) ;;
+    * ) echo "Aborted";exit 1;;
+    esac
 
     echo
     echo "Removing unused dependencies..."
@@ -99,6 +114,13 @@ else
         exit 1
     fi
 
+    echo
+    echo "Cleanup package cache..."
+    if ! dnf clean packages; then
+        echo "Failed!"
+        exit 1
+    fi
+
     echo "Looking up new release information..."
     UPGRADED_RELEASE=$(cat /etc/os-release | sed -rn 's/^VERSION_ID=(.*)$/\1/p')
     if [ -n "$UPGRADED_RELEASE" ]; then
@@ -110,11 +132,4 @@ else
     else
         echo "WARNING: Unable to find version of installed release"
     fi
-fi
-
-echo
-echo "Cleanup package cache..."
-if ! dnf clean packages; then
-    echo "Failed!"
-    exit 1
 fi

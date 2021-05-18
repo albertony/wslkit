@@ -18,14 +18,14 @@ if [ ${EUID:-$(id -u)} -ne 0 ]; then
     exit 1
 fi
 
+echo "Configuring locale..."
+. "${0}-locale"
+
 echo
 echo "Configuring packages..."
 . "${0}-packages"
 
-echo
-echo "Configuring locale..."
-. "${0}-locale"
-
+# Note: bash-setup requires find command, which is installed by setup-packages!
 echo
 echo "Configuring bash shell environment"
 . "$(dirname ${0})/bash-setup"
