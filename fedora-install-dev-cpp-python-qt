@@ -1,10 +1,38 @@
 #!/bin/sh
 #
-# Installs development tools, such as git, python and gcc.
+# Install script for C++ and related development tools, such as git, python and gcc.
+#
+# NOTE:
+# - Written for WSL import of docker root filesystem of Fedora 33 and 34,
+#   from Fedora Container Base image (with dnf) and Fedora Container Minimal
+#   Base image (with microdnf).
+# - Must be run by actual root user, not by use of sudo from regular user,
+#   (sudo is not installed by default in the Fedora Container Minimal Base image).
+# - Interactive! Will prompt user before doing any changes!
+# - Skips installation of documentation, by specifying --nodocs as command line
+#   argument. Standard base image has this configured as default with
+#   "tsflags=nodocs" in /etc/dns/dns.conf, but this is not supported by microdnf
+#   so for the minimal base image it must be added on command line.
 #
 
+# Verify running as root
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
+
+# Figure out if we have dnf or microdnf (from the Fedora Container Minimal Base image)
+if hash dnf > /dev/null 2>&1; then
+    dnf=dnf
+elif hash microdnf > /dev/null 2>&1; then
+    dnf=microdnf
+else
+    echo 'Package manager dnf or microdnf not found'
+    exit 1
+fi
+
 echo "Installing packages..."
-if ! sudo dnf install \
+if ! $dnf --nodocs install \
     `# Diff command` \
     diffutils \
     `# SSL toolkit` \
@@ -59,10 +87,3 @@ fi
 # # configuration file ~/.config/ccache/ccache.conf, so must run the script as the
 # # intended dev user and not root!
 # ccache --set-config max_size=500M
-
-echo
-echo "Cleanup package cache..."
-if ! dnf clean packages; then
-    echo "Failed!"
-    exit 1
-fi

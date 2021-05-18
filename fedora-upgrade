@@ -1,13 +1,28 @@
 #!/bin/sh
 #
-# Update script for Fedora.
+# Upgrade script to update packages to latest version, and optionally upgrade
+# the entire release to a newer major version.
 #
-# This script will look-up the current installed and the latest available stable release versions.
-# A release version number to upgrade to can be specified as argument, if not it defaults to latest.
-# If current is already at the specified version then a simple package upgrade is performed.
-# If on a different version then a major upgrade is performed.
+# This script will look-up the current installed and the latest available stable
+# release versions. A release version number to upgrade to can be specified as
+# argument, if not it defaults to latest. If current is already at the specified
+# version then a simple package upgrade is performed. If on a different version
+# then a major upgrade is performed.
 #
 # NOTE:
+# - Written for WSL import of docker root filesystem of Fedora 33 and 34,
+#   from Fedora Container Base image (with dnf) and Fedora Container Minimal
+#   Base image (with microdnf).
+# - Must be run by actual root user, not by use of sudo from regular user,
+#   (sudo is not installed by default in the Fedora Container Minimal Base image).
+# - Interactive! Will prompt user before doing any changes!
+# - Skips installation of documentation, by specifying --nodocs as command line
+#   argument. Standard base image has this configured as default with
+#   "tsflags=nodocs" in /etc/dns/dns.conf, but this is not supported by microdnf
+#   so for the minimal base image it must be added on command line.
+# - Using "update" command even if has been superseded by "upgrade",
+#   because it wasn't until Fedora 34 that microdnf supported "upgrade" and
+#   in both dnf and microdnf "update" still works as an alias for "upgrade"!
 # - Be careful if there are more than one major version between the current
 #   and the target version. You sould probably upgrade one version at a time.
 #   Specify version number as command line argument to control this.
@@ -17,18 +32,33 @@
 # - Read the upgrade guide to see recommended steps to be performed, and if
 #   there are special considerations for the specific release version:
 #   https://docs.fedoraproject.org/en-US/quick-docs/upgrading-fedora-online/
-# - Script is interactive! Will prompt user before doing any changes!
 #
+
+# Verify running as root
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root'
+    exit 1
+fi
 
 if ! cat /etc/os-release | grep -q '^ID=fedora$'; then
     echo "This is not a Fedora system!"
     exit 1
 fi
 
+# Figure out if we have dnf or microdnf (from the Fedora Container Minimal Base image)
+if hash dnf > /dev/null 2>&1; then
+    dnf=dnf
+elif hash microdnf > /dev/null 2>&1; then
+    dnf=microdnf
+else
+    echo 'Package manager dnf or microdnf not found'
+    exit 1
+fi
+
 # Perform a normal package upgrade
 # Alternatives: Force sync of all repositories with --refresh? Only perform upgrade-minimal?
 echo "Upgrading packages..."
-if ! sudo dnf upgrade; then
+if ! $dnf --nodocs update; then
     echo "Failed!"
     exit 1
 fi
@@ -50,30 +80,17 @@ if [ -n "$TARGET_RELEASE" ]; then
 else
     echo "Target release argument not specified, finding latest release..."
     # Make sure wget is installed, on clean WSL install of Fedora 34 it is missing!
-    echo "Ensuring wget is installed..."
-    if ! sudo dnf install wget; then
-        echo "ERROR: Update command returned with error code $?"
-        exit 1
+    if ! hash wget > /dev/null 2>&1; then
+        echo "Installing wget, need it for requesting release info..."
+        if ! $dnf --nodocs install wget; then
+            echo "ERROR: Install command returned with error code $?"
+            exit 1
+        fi
     fi
     LATEST_RELEASE=$(wget --quiet --timeout=10 --output-document=- https://dl.fedoraproject.org/pub/fedora/linux/releases/ | sed --quiet --regexp-extended 's/^.*<a href="([0-9]+)\/">.*$/\1/p' | sort --numeric-sort | tail -1)
     [ -z "$LATEST_RELEASE" ] && echo "ERROR: Unable to find latest release version" && exit 1
     echo "Target/latest release: $LATEST_RELEASE"
     TARGET_RELEASE=$LATEST_RELEASE
-fi
-
-# Always run a simple package update just in case.
-echo
-echo "Updating packages..."
-if ! sudo dnf upgrade; then
-    echo "ERROR: Upgrade command returned with error code $?"
-    exit 1
-fi
-
-echo
-echo "Cleanup package cache..."
-if ! dnf clean packages; then
-    echo "Failed!"
-    exit 1
 fi
 
 if [ "$TARGET_RELEASE" = "$CURRENT_RELEASE" ]; then
@@ -87,38 +104,44 @@ else
     echo "as separate upgrades instead!"
 
     echo
-    read -p "Do you want to continue? [Y/n]" choice
+    read -p "Do you want to continue? [Y/n] " choice
     case "$choice" in
     ""|y|Y ) ;;
     * ) echo "Aborted";exit 1;;
     esac
 
-    echo
-    echo "Removing unused dependencies..."
-    if ! sudo dnf autoremove; then
-        echo "Failed!"
-        exit 1
+    # Delete unused dependencies
+    # NOTE: The microdnf tool does not support the autoremove command.
+    # NOTE: Standard container images (including the minimal) has configured clean_requirements_on_remove=True
+    # which means every package remove in reality is an autoremove, so this should do nothing!
+    if [ "$dnf" != "microdnf" ]; then
+        echo
+        echo "Removing unused dependencies..."
+        if ! $dnf autoremove; then
+            echo "Failed!"
+            exit 1
+        fi
     fi
 
     echo
-    echo "Cleaning package cache..."
-    if ! sudo dnf clean all; then
+    echo "Cleaning cache and metadata..."
+    if ! $dnf clean all; then
         echo "Failed!"
         exit 1
     fi
 
     echo
     echo "Upgrading to new release..."
-    if ! dnf --releasever=${TARGET_RELEASE} --setopt=deltarpm=false distro-sync; then
-        echo "Failed!"
-        exit 1
-    fi
-
-    echo
-    echo "Cleanup package cache..."
-    if ! dnf clean packages; then
-        echo "Failed!"
-        exit 1
+    if [ "$dnf" = "microdnf" ]; then
+        if ! $dnf --nodocs --releasever=${TARGET_RELEASE} update; then
+            echo "Failed!"
+            exit 1
+        fi
+    else
+        if ! $dnf --nodocs --releasever=${TARGET_RELEASE} --setopt=deltarpm=false distro-sync; then
+            echo "Failed!"
+            exit 1
+        fi
     fi
 
     echo "Looking up new release information..."

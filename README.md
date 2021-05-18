@@ -182,7 +182,7 @@ Currently supported linux distributions (and tested versions):
 - OpenSUSE (untested)
 - Alpine (tested version 3.13.1)
 - Arch (tested version 2021.02.01)
-- Fedora (tested Fedora 34, also tested Rawhide but it does not mount /mnt/c so Install-VpnKit fails).
+- Fedora (tested Fedora 34, standard and minimal base images, also tested Rawhide but it does not mount /mnt/c so Install-VpnKit fails).
 
 Note that the Alpine, Arch and Fedora distributions listed above are not regular WSL images.
 Alpine is the official "minimal root filesystem" distribution from alpinelinux.org,

@@ -1226,26 +1226,25 @@ function Get-DistroImage
 
 	# Fedora root filesystem from official Docker images, last three releases, including the "rawhide" development/daily build.
 	# Alternative 1: Downloading from the official GitHub project used for publishing to Docker Hub.
-	# These are imports of the so-called "Container Base" published on fedoraproject.org, but with some modifications?
+	# These are simply imports of the so-called "Container Base" images published on fedoraproject.org, with no modifications!
 	# Note: The GitHub API imposes heavy rate limiting!
-	$GitHubApiHeaders = Get-GitHubApiAuthenticationHeaders -Credential $GitHubCredential
-	(Invoke-RestMethod -Uri "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/branches" -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object -Property name -NE "master" | Sort-Object -Property name -Descending | Select-Object -First 3 | ForEach-Object {
-		(Invoke-RestMethod -Uri "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/contents?ref=$($_.name)" -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object { $_.type -eq "dir" -and $_.name -eq "x86_64" } | Select-Object -ExpandProperty url -First 1 | ForEach-Object {
-			(Invoke-RestMethod -Uri $_ -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object { $_.type -eq "file" -and $_.name -match '(fedora-.*)[.-].*-x86_64.tar.xz' } | ForEach-Object {
-				$DistroImages += @(
-					[PSCustomObject]@{
-						Url = $_.download_url
-						Id = $Matches[1].ToLower()
-						#TODO: No checksum available?
-					}
-				)
-			}
-		}
-	}
+	#$GitHubApiHeaders = Get-GitHubApiAuthenticationHeaders -Credential $GitHubCredential
+	#(Invoke-RestMethod -Uri "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/branches" -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object -Property name -NE "master" | Sort-Object -Property name -Descending | Select-Object -First 3 | ForEach-Object {
+	#	(Invoke-RestMethod -Uri "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/contents?ref=$($_.name)" -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object { $_.type -eq "dir" -and $_.name -eq "x86_64" } | Select-Object -ExpandProperty url -First 1 | ForEach-Object {
+	#		(Invoke-RestMethod -Uri $_ -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object { $_.type -eq "file" -and $_.name -match '(fedora-.*)[.-].*-x86_64.tar.xz' } | ForEach-Object {
+	#			$DistroImages += @(
+	#				[PSCustomObject]@{
+	#					Url = $_.download_url
+	#					Id = $Matches[1].ToLower()
+	#					#TODO: No checksum available?
+	#				}
+	#			)
+	#		}
+	#	}
+	#}
 	# Alternative 2: Downloading from official download server, which also includes both the full
 	# "Fedora Container Base" and also the more minimalistic "Fedora Container Minimal Base".
-	# TODO: These can be imported, but are not able to enter the shell, so obviously the Docker images does something extra...
-	<#
+	# Note: These are .tar.xz archives, where the root filesystem is another .tar inside a subdirectory, so must extract three times!
 	$BaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/"
 	$Versions = @(
 		@{
@@ -1277,7 +1276,6 @@ function Get-DistroImage
 			)
 		}
 	}
-	#>
 
 	$DistroImages
 }
@@ -1500,7 +1498,24 @@ function New-Distro
 				&$SevenZipPath rn "$FileSystemArchiveFullName" root.x86_64 . | Out-Verbose
 				if ($LastExitCode -ne 0) { throw "Updating of ${FileSystemArchiveFullName} failed with error $LastExitCode" }
 			} elseif ($DistroImage.Id -like 'fedora-*') {
-				# Fedora download is compressed archive file that must be uncompressed, before the .tar can be imported.
+				# If image is Fedora Base Image: It is a compressed archive .tar.xz that must be uncompressed to .tar, then extracted to find the root filesystem as another .tar.
+				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
+				if (-not $SevenZipPath) {
+					Write-Host "Getting required 7-Zip utility (temporary)..."
+					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+				}
+				&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose # Extract .tar.xz
+				Remove-Item -LiteralPath $DownloadFullName
+				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+				$DownloadFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadFullName))
+				if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find extracted ${DownloadFullName}" }
+				&$SevenZipPath e -y "-i!*\layer.tar" "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose # Extract layer.tar from the "outer" .tar
+				Remove-Item -LiteralPath $DownloadFullName
+				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+				$FileSystemArchiveFullName = Join-Path $TempDirectory 'layer.tar'
+				if (-not (Test-Path -LiteralPath $FileSystemArchiveFullName)) { throw "Cannot find extracted ${FileSystemArchiveFullName}" }
+				# If image is from Fedora Docker GitHub project: It is a compressed archive .tar.xz file that must be uncompressed, before the .tar can be imported.
+				<#
 				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
 				if (-not $SevenZipPath) {
 					Write-Host "Getting required 7-Zip utility (temporary)..."
@@ -1510,6 +1525,7 @@ function New-Distro
 				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
 				$FileSystemArchiveFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadFullName))
 				if (-not (Test-Path -LiteralPath $FileSystemArchiveFullName)) { throw "Cannot find extracted ${FileSystemArchiveFullName}" }
+				#>
 			} else {
 				$FileSystemArchiveFullName = $DownloadFullName
 			}
@@ -2709,7 +2725,7 @@ function Install-VpnKit
 				} else {
 					# TODO: Only packages for stable versions are available, so if distro image is based on Rawhide there is not a match - but should be use highest version number?
 					if ($DistroInfo.VersionCodeName -eq 'rawhide') {
-						$DownloadBaseUrl = 'https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Everything/x86_64/os/Packages/'
+						$DownloadBaseUrl = 'https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Everything/x86_64/os/Packages/https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Everything/x86_64/os/Packages/'
 					} else {
 						$DownloadBaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/releases/$($DistroInfo.VersionCodeName)/Everything/x86_64/os/Packages/"
 					}
@@ -2718,20 +2734,27 @@ function Install-VpnKit
 					try
 					{
 						$Packages = 'socat', 'psmisc', 'libmnl', 'iproute'
+						$LibelfStatus = wsl.exe @WslOptions rpm --query elfutils-libelf
+						if ($LastExitCode -eq 0) {
+							Write-Verbose "Skipping installation of package 'elfutils-libelf' because it is already present: ${LibelfStatus}"
+						} else {
+							# The minimal base image does not include elfutils libraries, which are required by iproute!
+							$Packages += 'elfutils-default-yama-scope', 'elfutils-libs', 'elfutils-libelf'
+						}
 						# Downloading all first, then installing in a single command
 						Write-Host "Downloading packages '$($Packages -join `"', '`")'..."
 						$PackageDownloadNames = @()
 						foreach ($Package in $Packages) {
 							$DownloadUrl = "${DownloadBaseUrl}$($Package[0])/"
-							$DownloadName = Invoke-WebRequest -Uri $DownloadUrl -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "^${Package}-\d.*\.x86_64\.rpm$" } | Select-Object -First 1 # Pick first with a version number, skip "-devel", "-static" or other variants
+							$DownloadName = Invoke-WebRequest -Uri $DownloadUrl -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "^${Package}-\d.*\.x86_64\.rpm$" -or $_ -match "^${Package}-\d.*\.noarch\.rpm$"} | Select-Object -First 1 # Pick first with a version number, prefer x86_64 with fallback to noarch, skip "-devel", "-static" or other variants
 							$DownloadUrl += $DownloadName
 							if (-not $DownloadName) {
-								Write-Warning "Unable to download package '$($Package.Name)', you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
+								Write-Warning "Unable to download package '${Package}', you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
 							} else {
 								$DownloadFullName = Join-Path $TempDirectory $DownloadName
 								Save-File -Url "${DownloadUrl}" -Path $DownloadFullName
 								if (-not (Test-Path -LiteralPath $DownloadFullName)) {
-									Write-Warning "Failed to download package '$($Package.Name)', you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
+									Write-Warning "Failed to download package '${Package}', you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
 									break
 								}
 								$PackageDownloadNames += $DownloadName

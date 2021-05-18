@@ -2,23 +2,48 @@
 #
 # Perform full package upgrade, and installs some basic packages missing.
 #
+# NOTE:
+# - Written for WSL import of docker root filesystem of Fedora 33 and 34,
+#   from Fedora Container Base image (with dnf) and Fedora Container Minimal
+#   Base image (with microdnf).
+# - Must be run by actual root user, not by use of sudo from regular user,
+#   (sudo is not installed by default in the Fedora Container Minimal Base image).
+# - Interactive! Will prompt user before doing any changes!
+# - Skips installation of documentation, by specifying --nodocs as command line
+#   argument. Standard base image has this configured as default with
+#   "tsflags=nodocs" in /etc/dns/dns.conf, but this is not supported by microdnf
+#   so for the minimal base image it must be added on command line.
+# - Using "update" command even if has been superseded by "upgrade",
+#   because it wasn't until Fedora 34 that microdnf supported "upgrade" and
+#   in both dnf and microdnf "update" still works as an alias for "upgrade"!
+#
 
-# Verify running as root (not relying on sudo which may not be installed yet).
+# Verify running as root
 if [ ${EUID:-$(id -u)} -ne 0 ]; then
     echo 'Please run this script as root'
     exit 1
 fi
 
+# Figure out if we have dnf or microdnf (from the Fedora Container Minimal Base image)
+if hash dnf > /dev/null 2>&1; then
+    dnf=dnf
+elif hash microdnf > /dev/null 2>&1; then
+    dnf=microdnf
+else
+    echo 'Package manager dnf or microdnf not found'
+    exit 1
+fi
+
 echo
 echo "Upgrading packages..."
-if ! dnf upgrade --refresh; then
+if ! $dnf --nodocs --refresh update; then
     echo "Failed!"
     exit 1
 fi
 
 echo
 echo "Installing basic packages..."
-if ! sudo dnf install \
+if ! $dnf --nodocs install \
     findutils \
     unzip \
     wget \
@@ -27,13 +52,6 @@ if ! sudo dnf install \
     iproute \
     procps-ng
 then
-    echo "Failed!"
-    exit 1
-fi
-
-echo
-echo "Cleanup package cache..."
-if ! dnf clean packages; then
     echo "Failed!"
     exit 1
 fi

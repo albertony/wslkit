@@ -199,7 +199,7 @@ else
             cat /etc/apt/sources.list | sed "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/"
         fi
         echo
-        read -p "Do you want to continue? [Y/n]" choice
+        read -p "Do you want to continue? [Y/n] " choice
         case "$choice" in
         ""|y|Y ) ;;
         * ) echo "Aborted";exit 1;;
