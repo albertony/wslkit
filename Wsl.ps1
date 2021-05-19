@@ -340,51 +340,52 @@ function Get-SevenZip
 		[Parameter(Mandatory=$false)] [ValidateNotNullOrEmpty()] [string] $WorkingDirectory = (Get-Location -PSProvider FileSystem).ProviderPath
 	)
 	$DownloadDirectory = Get-Directory -Path $DownloadDirectory -Create
-	$TempDirectory = New-TempDirectory -Path $WorkingDirectory
-	try
-	{
-		# Need the full (x64) edition to be able to extract installers etc.
-		$ReleaseInfo = Invoke-RestMethod -Uri "https://sourceforge.net/projects/sevenzip/rss?path=/7-Zip" -DisableKeepAlive | Where-Object { $_.title.'#cdata-section' -match "(?:/7-Zip/)(\d+(\.\d+)*)(?:/7z\d+-x64.exe)" } | Select-Object -First 1
-		# Download the basic edition if necessary, either because it is the requested edition or because it is needed to extract a more advanced edition later.
-		# The full edition download is itself an archive, but its 7z/LZMA so we just need the simplest single-binary "7-Zip Reduced"
-		# which there is a direct download link for, so we download it temporarily if not finding something else.
-		# We need some 7-Zip utility to extract the download, see if there is one already, if not we will have to download the basic reduced version later
-		$SevenZipUtilPath = Get-Command -CommandType Application "7z.exe", ".\7z.exe", "7za.exe", ".\7za.exe", "7zr.exe", ".\7zr.exe", "7zdec.exe", ".\7zdec.exe" -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
-		if ($SevenZipUtilPath) {
-			Write-Verbose "Using existing 7-Zip utility for extracting full edition archive download: ${SevenZipUtilPath}"
-		} else {
-			Write-Verbose "Downloading latest version of 7-Zip Basic edition to be able to extract full edition archive download"
-			$DownloadName = "7zr.exe" # Single-binary reduced version, 7zr.exe, which can extract .7z and .lzma files only
+	$SevenZipPath = Join-Path $DownloadDirectory '7z.exe'
+	if (Test-Path -PathType Leaf $SevenZipPath) {
+		Write-Verbose "7-Zip already exists: $SevenZipPath"
+	} else {
+		$TempDirectory = New-TempDirectory -Path $WorkingDirectory
+		try
+		{
+			# Need the full (x64) edition to be able to extract installers etc.
+			$ReleaseInfo = Invoke-RestMethod -Uri "https://sourceforge.net/projects/sevenzip/rss?path=/7-Zip" -DisableKeepAlive | Where-Object { $_.title.'#cdata-section' -match "(?:/7-Zip/)(\d+(\.\d+)*)(?:/7z\d+-x64.exe)" } | Select-Object -First 1
+			# Download the basic edition if necessary, either because it is the requested edition or because it is needed to extract a more advanced edition later.
+			# The full edition download is itself an archive, but its 7z/LZMA so we just need the simplest single-binary "7-Zip Reduced"
+			# which there is a direct download link for, so we download it temporarily if not finding something else.
+			# We need some 7-Zip utility to extract the download, see if there is one already, if not we will have to download the basic reduced version later
+			$SevenZipUtilPath = Get-Command -CommandType Application "7z.exe", ".\7z.exe", "7za.exe", ".\7za.exe", "7zr.exe", ".\7zr.exe", "7zdec.exe", ".\7zdec.exe" -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
+			if ($SevenZipUtilPath) {
+				Write-Verbose "Using existing 7-Zip utility for extracting full edition archive download: ${SevenZipUtilPath}"
+			} else {
+				Write-Verbose "Downloading latest version of 7-Zip Basic edition to be able to extract full edition archive download"
+				$DownloadName = '7zr.exe' # Single-binary reduced version, 7zr.exe, which can extract .7z and .lzma files only
+				$DownloadUrl = "https://www.7-zip.org/a/${DownloadName}"
+				$DownloadFullName = Join-Path $TempDirectory $DownloadName
+				Save-File -Url $DownloadUrl -Path $DownloadFullName
+				if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
+				$SevenZipUtilPath = $DownloadFullName
+			}
+			# Download the full edition
+			Write-Verbose "Downloading latest version of 7-Zip Full edition"
+			$DownloadName = $ReleaseInfo.title.'#cdata-section'.Split("/")[-1]
 			$DownloadUrl = "https://www.7-zip.org/a/${DownloadName}"
 			$DownloadFullName = Join-Path $TempDirectory $DownloadName
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
-			$SevenZipUtilPath = $DownloadFullName
+			# Extract (using the downloaded single-binary reduced version, 7zr.exe, which can extract .7z and .lzma files only)
+			&$SevenZipUtilPath e -y "-o${DownloadDirectory}" "${DownloadFullName}" '7z.exe' '7z.dll' | Out-Verbose
+			Remove-Item -LiteralPath $DownloadFullName
+			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+			if (-not (Test-Path -PathType Leaf $SevenZipPath)) { throw "Cannot find extracted $SevenZipPath" }
 		}
-		# Download the full edition
-		Write-Verbose "Downloading latest version of 7-Zip Full edition"
-		$DownloadName = $ReleaseInfo.title.'#cdata-section'.Split("/")[-1]
-		$DownloadUrl = "https://www.7-zip.org/a/${DownloadName}"
-		$DownloadFullName = Join-Path $TempDirectory $DownloadName
-		Save-File -Url $DownloadUrl -Path $DownloadFullName
-		if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
-		# Extract (using the downloaded single-binary reduced version, 7zr.exe, which can extract .7z and .lzma files only)
-		&$SevenZipUtilPath x "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose
-		if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
-		Remove-Item -LiteralPath $DownloadFullName
-		# Copy into destination
-		Write-Verbose "Copying extracted binaries to target location ${DownloadDirectory}"
-		Move-Item -Path (Join-Path $TempDirectory "7z.exe"), (Join-Path $TempDirectory "7z.dll") -Destination $DownloadDirectory -Force # 7z.exe, 7z.dll
-		$SevenZipPath = Join-Path $DownloadDirectory "7z.exe"
-		if (-not (Test-Path -PathType Leaf $SevenZipPath)) { throw "Cannot find extracted $SevenZipPath" }
-		$SevenZipPath
-	}
-	finally
-	{
-		if ($TempDirectory -and (Test-Path -LiteralPath $TempDirectory)) {
-			Remove-Item -LiteralPath $TempDirectory -Recurse
+		finally
+		{
+			if ($TempDirectory -and (Test-Path -LiteralPath $TempDirectory)) {
+				Remove-Item -LiteralPath $TempDirectory -Recurse
+			}
 		}
 	}
+	$SevenZipPath
 }
 
 # .SYNOPSIS
@@ -1390,13 +1391,13 @@ function New-Distro
 		# Primary source: https://docs.microsoft.com/en-us/windows/wsl/install-manual#downloading-distributions
 		[Parameter(Mandatory)]
 		[ValidateNotNullOrEmpty()]
-		[ValidateScript({
-			if ($_) {
-				$ValidSet = Get-DistroImage | Select-Object -ExpandProperty Id
-				if ($_ -notin $ValidSet) { throw [System.Management.Automation.PSArgumentException] "The value `"${_}`" is not a known image. Only `"$($ValidSet -join '", "')`" can be specified." }
-			}
-			$true
-		})]
+		#[ValidateScript({ # OLD: This involves a lot of web requests and we have repeat it again at start of function body, so just report any error there!
+		#	if ($_) {
+		#		$ValidSet = Get-DistroImage | Select-Object -ExpandProperty Id
+		#		if ($_ -notin $ValidSet) { throw [System.Management.Automation.PSArgumentException] "The value `"${_}`" is not a known image. Only `"$($ValidSet -join '", "')`" can be specified." }
+		#	}
+		#	$true
+		#})]
 		[ArgumentCompleter({
 			param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams)
 			Get-DistroImage | Select-Object -ExpandProperty Id | Where-Object { -not $WordToComplete -or ($_ -like $WordToComplete.Trim('"''') -or $_.ToLower().StartsWith($WordToComplete.Trim('"''').ToLower())) } | ForEach-Object { if ($_.IndexOfAny(" `"") -ge 0){"`'${_}`'"}else{$_} }
@@ -1423,6 +1424,7 @@ function New-Distro
 
 		[switch] $SetDefault
 	)
+	Write-Verbose "Finding distro image"
 	$DistroImage = Get-DistroImage | Where-Object { $_.Id -eq $Image }
 	if (-not $DistroImage) { throw "Distro image '${Image}' could not be found" }
 	if (Test-Distro -Name $Name) { throw "There is already a WSL distro with name '${Name}'" }
@@ -1432,7 +1434,7 @@ function New-Distro
 	$TempDirectory = New-TempDirectory -Path $WorkingDirectory
 	try
 	{
-		if ($PSCmdlet.ShouldProcess($Destination, "Install distro image '$($DistroImage.Id)' into WSL as '${Name}'")) {
+		if ($PSCmdlet.ShouldProcess($TempDirectory, "Download distro image '$($DistroImage.Id)'")) {
 
 			# Download
 			Write-Host "Downloading distro image '$($DistroImage.Id)'..."
@@ -1449,14 +1451,14 @@ function New-Distro
 			if ($DistroImage.Checksum) {
 				# Verify checksum
 				$ExpectedHash = $DistroImage.Checksum.Value.ToUpper()
-				Write-Host "Verifying checksum..."
+				Write-Host "Verifying $($DistroImage.Checksum.Algorithm) checksum..."
 				Write-Verbose "Expected `"${ExpectedHash}`""
 				$ActualHash = Get-FileHash -LiteralPath $DownloadFullName -Algorithm ($DistroImage.Checksum.Algorithm) | Select-Object -ExpandProperty Hash
 				Write-Verbose "Actual   `"${ActualHash}`""
 				if ($ExpectedHash -ne $ActualHash) {
-					throw "Checksum ($($DistroImage.Checksum.Algorithm)) mismatch: Expected ${ExpectedHash} but was ${ActualHash}"
+					throw "$($DistroImage.Checksum.Algorithm) checksum mismatch: Expected ${ExpectedHash} but was ${ActualHash}"
 				}
-				Write-Verbose "$($DistroImage.Checksum.Algorithm) match: ${ExpectedHash}"
+				Write-Verbose "$($DistroImage.Checksum.Algorithm) checksum match"
 			}
 			if ($DownloadFullName.EndsWith(".AppxBundle")) {
 				# Extract appx installer from AppxBundle, then fake that as the downloaded file and continue with extracting it
@@ -1465,7 +1467,8 @@ function New-Distro
 					Write-Host "Getting required 7-Zip utility (temporary)..."
 					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
 				}
-				&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose
+				&$SevenZipPath e -y "-i!*DistroLauncher-Appx_*_x64.appx" "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose
+				Remove-Item -LiteralPath $DownloadFullName
 				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
 				$DownloadFullName = Get-Item (Join-Path $TempDirectory 'DistroLauncher-Appx_*_x64.appx') | Select-Object -ExpandProperty FullName
 				if (-not $DownloadFullName) { throw "Cannot find extracted DistroLauncher-Appx_*_x64.appx" }
@@ -1478,9 +1481,9 @@ function New-Distro
 					Write-Host "Getting required 7-Zip utility (temporary)..."
 					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
 				}
-				&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" 'install.tar.gz' | Out-Verbose
-				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+				&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" 'install.tar.gz' | Out-Verbose
 				Remove-Item -LiteralPath $DownloadFullName
+				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
 				$FileSystemArchiveFullName = Join-Path $TempDirectory 'install.tar.gz'
 				if (-not (Test-Path -LiteralPath $FileSystemArchiveFullName)) { throw "Cannot find extracted ${FileSystemArchiveFullName}" }
 			} elseif ($DistroImage.Id -eq 'archlinux-bootstrap') {
@@ -1491,12 +1494,14 @@ function New-Distro
 					Write-Host "Getting required 7-Zip utility (temporary)..."
 					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
 				}
-				&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose
+				&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose
+				Remove-Item -LiteralPath $DownloadFullName
 				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
 				$FileSystemArchiveFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadFullName))
 				if (-not (Test-Path -LiteralPath $FileSystemArchiveFullName)) { throw "Cannot find extracted ${FileSystemArchiveFullName}" }
+				Write-Verbose "Patching archive for WSL import (moving everything from subfolder 'root.x86_64' to root)"
 				&$SevenZipPath rn "$FileSystemArchiveFullName" root.x86_64 . | Out-Verbose
-				if ($LastExitCode -ne 0) { throw "Updating of ${FileSystemArchiveFullName} failed with error $LastExitCode" }
+				if ($LastExitCode -ne 0) { throw "Patching of archive '${FileSystemArchiveFullName}' for WSL import failed with error $LastExitCode" }
 			} elseif ($DistroImage.Id -like 'fedora-*') {
 				# If image is Fedora Base Image: It is a compressed archive .tar.xz that must be uncompressed to .tar, then extracted to find the root filesystem as another .tar.
 				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
@@ -1504,7 +1509,7 @@ function New-Distro
 					Write-Host "Getting required 7-Zip utility (temporary)..."
 					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
 				}
-				&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose # Extract .tar.xz
+				&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose # Extract .tar.xz
 				Remove-Item -LiteralPath $DownloadFullName
 				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
 				$DownloadFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadFullName))
@@ -1527,180 +1532,170 @@ function New-Distro
 				if (-not (Test-Path -LiteralPath $FileSystemArchiveFullName)) { throw "Cannot find extracted ${FileSystemArchiveFullName}" }
 				#>
 			} else {
+				# Assume it is a root filesystem archive that can be imported directly!
 				$FileSystemArchiveFullName = $DownloadFullName
 			}
-			# Else: Assume its an archive file ready to be imported!
 
-			# Import archive to WSL
-			Write-Host "Creating WSL distro '${Name}'..."
-			Write-Verbose "Importing from archive ${FileSystemArchiveFullName}"
-			#$Destination = Get-Directory -Path $Destination -Create
-			wsl.exe --import $Name $Destination $FileSystemArchiveFullName
-			if ($LastExitCode -ne 0) {
-				# Avoid empty destination being left behind when error, it will prevent a new attempt with same path!
-				#if (Test-Path -LiteralPath $Destination) {
-				#	Write-Host "Import of image archive failed (error code ${LastExitCode}), deleting destination ${Destination}"
-				#	Remove-Item -Path $Destination
-				#}
-				throw "Import of image archive failed (error code ${LastExitCode})"
-			}
-			Remove-Item -LiteralPath $FileSystemArchiveFullName
+			if ($PSCmdlet.ShouldProcess($Destination, "Create distro '${Name}' from image '$($DistroImage.Id)' archive '${FileSystemArchiveFullName}'")) {
 
-			# Optionally create user
-			if (($CreateUser -or $User) -and $PSCmdlet.ShouldProcess("$(if($User){$User.UserName}else{'Prompt for credential'})", "Create user")) {
-				if (-not $User) {
-					do {
-						try { $User = Get-Credential -Message "Enter credential for user to be created" -UserName $User.UserName } catch {}
-					} while (
-						# Repeat while:
-						# - Username given but is not valid
-						# - Username given, but no password, and user confirms the intention was not passwordless user (which is problematic on systems with sudo)
-						# - Credential prompt aborted, and user confirms that the intention is still to create a user
-						($User -and -not (ValidateDistroUser $User)) `
-						-or ($User -and $User.Password.Length -eq 0 -and -not $PSCmdlet.ShouldContinue("No password given. Users without password may be problematic to use with sudo.`nDo you want to create user `"$($User.UserName)`" without password?", "Create user")) `
-						-or (-not $User -and -not $PSCmdlet.ShouldContinue("No credentials given, do you want to skip creation of user?", "Create user"))
-					)
+				# Import archive to WSL
+				Write-Host "Creating WSL distro '${Name}'..."
+				Write-Verbose "Importing from archive ${FileSystemArchiveFullName}"
+				#$Destination = Get-Directory -Path $Destination -Create
+				wsl.exe --import $Name $Destination $FileSystemArchiveFullName
+				Remove-Item -LiteralPath $FileSystemArchiveFullName
+				if ($LastExitCode -ne 0) {
+					# Avoid empty destination being left behind when error, it will prevent a new attempt with same path!
+					#if (Test-Path -LiteralPath $Destination) {
+					#	Write-Host "Import of image archive failed (error code ${LastExitCode}), deleting destination ${Destination}"
+					#	Remove-Item -Path $Destination
+					#}
+					throw "Import of image archive failed (error code ${LastExitCode})"
 				}
-				if ($User) {
-					# First create user without password, then optionally set the password using chpasswd command.
-					# Note:
-					# - MS reference launcher: Uses 'adduser' with password prompt:
-					#     adduser --quiet --gecos '' <username>
-					# - Debian: Uses 'adduser' without password prompt, and then sets required password with separate 'passwd' command:
-					#     adduser --quiet --disabled-password --gecos '' <username>
-					#     passwd <username>
-					# - Alpine only have 'adduser' (not useradd) by default. No sudo by default, so user with empty password will not be a problem.
-					# - Arch only have 'useradd', not 'adduser' by default.
-					# - Fedora have 'useradd', and 'adduser' as an alias to it, and does not have 'passwd' to set password interactive.
-					# - All distros have 'chpasswd', which can be used to encrypt and set password from plaintext, so we can prompt
-					#   for password ourself using 'read -sp' or in PowerShell and send it into it.
-					$UserCreated = $false
-					if ($DistroImage.Id -eq 'alpine-minirootfs') {
-						# Alpine
-						# Add user as member of customized list of groups.
-						# See: https://github.com/agowa338/WSL-DistroLauncher-Alpine/blob/master/DistroLauncher/DistroSpecial.h
-						Write-Host "Creating user '$($User.UserName)'..."
-						# Must use adduser command, useradd command is not available before installing package 'shadow'
-						wsl.exe --distribution $Name --exec sh -c "adduser --disabled-password --gecos '' $($User.UserName)" # Note: Needed the sh -c workaround for it to accept arguments!
-						if ($LastExitCode -eq 0) {
-							$UserCreated = $true
-							# Add to groups in separate command, since adduser does not support the --groups option,
-							# and also there is no usermod command by default so must use adduser or addgroup (which are
-							# basically the same) to add one by one.
-							Write-Host "Setting as member of wheel and some other standard groups..."
-							wsl.exe --distribution $Name for g in adm floppy cdrom tape wheel ping`; do adduser $User.UserName `$g`; done
-						} else {
-							Write-Warning "Failed to create user (error code ${LastExitCode})"
-						}
+
+				# Optionally create user
+				if (($CreateUser -or $User) -and $PSCmdlet.ShouldProcess("$(if($User){$User.UserName}else{'Prompt for credential'})", "Create user")) {
+					if (-not $User) {
+						do {
+							try { $User = Get-Credential -Message "Enter credential for user to be created" -UserName $User.UserName } catch {}
+						} while (
+							# Repeat while:
+							# - Username given but is not valid
+							# - Username given, but no password, and user confirms the intention was not passwordless user (which is problematic on systems with sudo)
+							# - Credential prompt aborted, and user confirms that the intention is still to create a user
+							($User -and -not (ValidateDistroUser $User)) `
+							-or ($User -and $User.Password.Length -eq 0 -and -not $PSCmdlet.ShouldContinue("No password given. Users without password may be problematic to use with sudo.`nDo you want to create user `"$($User.UserName)`" without password?", "Create user")) `
+							-or (-not $User -and -not $PSCmdlet.ShouldContinue("No credentials given, do you want to skip creation of user?", "Create user"))
+						)
 					}
-					elseif ($DistroImage.Id -eq 'archlinux-bootstrap') {
-						# Arch
-						# Add user with required non-empty password. Use low-level command 'useradd',
-						# since 'adduser' is not built-in. Make it a member of group "wheel".
-						Write-Host "Creating user '$($User.UserName)' as member of wheel group..."
-						wsl.exe --distribution $Name --exec sh -c "useradd --create-home --groups wheel $($User.UserName)"
-						if ($LastExitCode -eq 0) {
-							$UserCreated = $true
-						} else {
-							Write-Warning "Failed to create user (error code ${LastExitCode})"
-						}
-					}
-					elseif ($DistroImage.Id -like 'fedora-*') {
-						# Fedora
-						# Add user with with low-level command 'useradd', since 'adduser' is not built-in,
-						# and make it a member of group "wheel".
-						Write-Host "Creating user '$($User.UserName)' as member of wheel group..."
-						wsl.exe --distribution $Name --exec sh -c "useradd --create-home --groups wheel $($User.UserName)"
-						if ($LastExitCode -eq 0) {
-							$UserCreated = $true
-						} else {
-							Write-Warning "Failed to create user (error code ${LastExitCode})"
-						}
-					}
-					else {
-						# Debian and related (Ubuntu)
-						# Add user with required non-empty password (as Debian does it, perhaps to avoid trouble with sudo later?)
-						Write-Host "Creating user '$($User.UserName)'..."
-						# Using 'adduser' command.
-						# Could also have used the low-level 'useradd': But must then explicitely specify to create
-						# user home, and also possible replace shell /bin/sh with shell /bin/bash if that is wanted
-						# (also it does not prompt for password so must explicit call 'passwd' command, but this is not relevant here).
-						#   useradd --create-home --shell /bin/bash <username>
-						wsl.exe --distribution $Name --exec sh -c "adduser --quiet --disabled-password --gecos '' $($User.UserName)" # Note: Needed the sh -c workaround for it to accept arguments!
-						if ($LastExitCode -eq 0) {
-							$UserCreated = $true
-							Write-Host "Setting as member of sudo and some other standard groups..."
-							# Using the list of default groups from Microsoft's WSL Distro Launcher Reference Implementation
-							# (see https://github.com/microsoft/WSL-DistroLauncher/blob/master/DistroLauncher/DistributionInfo.cpp),
-							# which is currently: adm,cdrom,sudo,dip,plugdev. Debian's official WSL distro installer uses this
-							# list unchanged, Ubuntu adds additional groups: dialout,floppy,audio,video,netdev.
-							$UserGroups = "adm,cdrom,sudo,dip,plugdev"
-							if ($DistroImage.Id.StartsWith('ubuntu')) { # Ubuntu default installers adds some additional groups
-								$UserGroups += ",dialout,floppy,audio,video,netdev"
+					if ($User) {
+						# First create user without password, then optionally set the password using chpasswd command.
+						# Note:
+						# - MS reference launcher: Uses 'adduser' with password prompt:
+						#     adduser --quiet --gecos '' <username>
+						# - Debian: Uses 'adduser' without password prompt, and then sets required password with separate 'passwd' command:
+						#     adduser --quiet --disabled-password --gecos '' <username>
+						#     passwd <username>
+						# - Alpine only have 'adduser' (not useradd) by default. No sudo by default, so user with empty password will not be a problem.
+						# - Arch only have 'useradd', not 'adduser' by default.
+						# - Fedora have 'useradd', and 'adduser' as an alias to it, and does not have 'passwd' to set password interactive.
+						# - All distros have 'chpasswd', which can be used to encrypt and set password from plaintext, so we can prompt
+						#   for password ourself using 'read -sp' or in PowerShell and send it into it.
+						$UserCreated = $false
+						if ($DistroImage.Id -eq 'alpine-minirootfs') {
+							# Alpine
+							# Add user as member of customized list of groups.
+							# See: https://github.com/agowa338/WSL-DistroLauncher-Alpine/blob/master/DistroLauncher/DistroSpecial.h
+							Write-Host "Creating user '$($User.UserName)'..."
+							# Must use adduser command, useradd command is not available before installing package 'shadow'
+							wsl.exe --distribution $Name --exec sh -c "adduser --disabled-password --gecos '' $($User.UserName)" # Note: Needed the sh -c workaround for it to accept arguments!
+							if ($LastExitCode -eq 0) {
+								$UserCreated = $true
+								# Add to groups in separate command, since adduser does not support the --groups option,
+								# and also there is no usermod command by default so must use adduser or addgroup (which are
+								# basically the same) to add one by one.
+								Write-Host "Setting as member of wheel and some other standard groups..."
+								wsl.exe --distribution $Name for g in adm floppy cdrom tape wheel ping`; do adduser $User.UserName `$g`; done
+							} else {
+								Write-Warning "Failed to create user (error code ${LastExitCode})"
 							}
-							# Using low-level usermod. Could also have used adduser (or its alias addgroup), it appends
-							# by default but does only support adding one group at a time.
-							wsl.exe --distribution $Name usermod --append --groups $UserGroups $User.UserName
-							if ($LastExitCode -ne 0) {
-								#wsl.exe --distribution $Name deluser $UserName # Delete the user if the group add command failed (like MS launcher template does)
-								Write-Warning "Failed to add user to groups (error code ${LastExitCode})"
-							}
-						} else {
-							Write-Warning "Failed to create user (error code ${LastExitCode})"
 						}
-					}
-					if ($User -and $UserCreated) {
-						# Set password
-						if ($User.Password.Length -gt 0) {
-							wsl.exe --distribution $Name --exec sh -c "echo \`"$($User.UserName):$($User.GetNetworkCredential().Password)\`" | chpasswd > /dev/null"
-							if ($LastExitCode -ne 0) {
-								Write-Warning "Failed to set password (error code ${LastExitCode})"
+						elseif ($DistroImage.Id -eq 'archlinux-bootstrap' -or $DistroImage.Id -like 'fedora-*') {
+							# Arch and Fedora.
+							# Add user with required non-empty password. Use low-level command 'useradd',
+							# since 'adduser' is not built-in. Make it a member of group "wheel".
+							Write-Host "Creating user '$($User.UserName)' as member of wheel group..."
+							wsl.exe --distribution $Name --exec sh -c "useradd --create-home --groups wheel $($User.UserName)"
+							if ($LastExitCode -eq 0) {
+								$UserCreated = $true
+							} else {
+								Write-Warning "Failed to create user (error code ${LastExitCode})"
 							}
 						}
 						else {
-							Write-Warning "No password set"
+							# Debian and related (Ubuntu)
+							# Add user with required non-empty password (as Debian does it, perhaps to avoid trouble with sudo later?)
+							Write-Host "Creating user '$($User.UserName)'..."
+							# Using 'adduser' command.
+							# Could also have used the low-level 'useradd': But must then explicitely specify to create
+							# user home, and also possible replace shell /bin/sh with shell /bin/bash if that is wanted
+							# (also it does not prompt for password so must explicit call 'passwd' command, but this is not relevant here).
+							#   useradd --create-home --shell /bin/bash <username>
+							wsl.exe --distribution $Name --exec sh -c "adduser --quiet --disabled-password --gecos '' $($User.UserName)" # Note: Needed the sh -c workaround for it to accept arguments!
+							if ($LastExitCode -eq 0) {
+								$UserCreated = $true
+								Write-Host "Setting as member of sudo and some other standard groups..."
+								# Using the list of default groups from Microsoft's WSL Distro Launcher Reference Implementation
+								# (see https://github.com/microsoft/WSL-DistroLauncher/blob/master/DistroLauncher/DistributionInfo.cpp),
+								# which is currently: adm,cdrom,sudo,dip,plugdev. Debian's official WSL distro installer uses this
+								# list unchanged, Ubuntu adds additional groups: dialout,floppy,audio,video,netdev.
+								$UserGroups = "adm,cdrom,sudo,dip,plugdev"
+								if ($DistroImage.Id.StartsWith('ubuntu')) { # Ubuntu default installers adds some additional groups
+									$UserGroups += ",dialout,floppy,audio,video,netdev"
+								}
+								# Using low-level usermod. Could also have used adduser (or its alias addgroup), it appends
+								# by default but does only support adding one group at a time.
+								wsl.exe --distribution $Name usermod --append --groups $UserGroups $User.UserName
+								if ($LastExitCode -ne 0) {
+									#wsl.exe --distribution $Name deluser $UserName # Delete the user if the group add command failed (like MS launcher template does)
+									Write-Warning "Failed to add user to groups (error code ${LastExitCode})"
+								}
+							} else {
+								Write-Warning "Failed to create user (error code ${LastExitCode})"
+							}
 						}
-						# Register as default WSL user for this distro
-						$UserId = wsl.exe --distribution $Name --user $User.UserName --exec id -u # Note: On Alpine "id --user" does not work, but shortform "id -u" does!
-						if ($LastExitCode -eq 0) {
-							Write-Host "Setting as default user..."
-							GetDistroRegistryItem -Name $Name | Set-ItemProperty -Name DefaultUid -Value $UserId
-						} else {
-							Write-Warning "Unable to set as default user (could not find uid)"
+						if ($User -and $UserCreated) {
+							# Set password
+							if ($User.Password.Length -gt 0) {
+								wsl.exe --distribution $Name --exec sh -c "echo \`"$($User.UserName):$($User.GetNetworkCredential().Password)\`" | chpasswd > /dev/null"
+								if ($LastExitCode -ne 0) {
+									Write-Warning "Failed to set password (error code ${LastExitCode})"
+								}
+							} else {
+								Write-Warning "No password set"
+							}
+							# Register as default WSL user for this distro
+							$UserId = wsl.exe --distribution $Name --user $User.UserName --exec id -u # Note: On Alpine "id --user" does not work, but shortform "id -u" does!
+							if ($LastExitCode -eq 0) {
+								Write-Host "Setting as default user..."
+								GetDistroRegistryItem -Name $Name | Set-ItemProperty -Name DefaultUid -Value $UserId
+							} else {
+								Write-Warning "Unable to set as default user (could not find uid)"
+							}
 						}
 					}
 				}
-			}
 
-			# Optionally set as default distro in WSL
-			if ($SetDefault -and $PSCmdlet.ShouldProcess($Name, "Set as default WSL distro")) {
-				Write-Host "Setting as default WSL distro"
-				# Note: Using wsl.exe here, but have also Set-DefaultDistro which access registry.
-				wsl.exe --set-default $Name
-				if ($LastExitCode -ne 0) {
-					Write-Warning "Failed to set as default WSL distro (error code ${LastExitCode})"
-				}
-			}
-
-			# Fetch some status info about the newly installed distro just to inform user
-			$DistroInfo = Get-DistroSystemInfo -Name $Name
-			if ($DistroInfo.Id -eq 'debian') {
-				# TODO:
-				# - Could compare actual version numbers.
-				# - Could also compare version code against configured PackageSourceCodeName to see if upgraded according to current source or not.
-				# - Could update/update for the user by running necessary commands, but then this requires internet access,
-				#   and on systems where VPNKit is required then another distro must have already been installed and running VPNKit,
-				#   and also it soon gets a bit complex to handle any state problem free..
-				if ($DistroInfo.VersionCodeName) {
-					$LatestVersion, $LatestCodeName = Invoke-RestMethod -Uri 'https://deb.debian.org/debian/dists/stable/Release' -DisableKeepAlive | Select-String -Pattern '(?m)^Version:\s*(.*)\n.*Codename:\s*(.*)$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1,2 | Select-Object -ExpandProperty Value
-					if ($LatestCodeName -and $LatestCodeName -ne $DistroInfo.VersionCodeName) {
-						Write-Host "Note: There is a newer stable release of Debian that you can upgrade to: $($DistroInfo.Version) ($($DistroInfo.VersionCodeName)) -> ${LatestVersion} (${LatestCodeName})"
-					} elseif ($DistroInfo.Version -and $LatestVersion -and $DistroInfo.Version -ne $LatestVersion) {
-						Write-Host "Note: There are updates available for the current release of Debian: $($DistroInfo.Version) -> ${LatestVersion}"
+				# Optionally set as default distro in WSL
+				if ($SetDefault -and $PSCmdlet.ShouldProcess($Name, "Set as default WSL distro")) {
+					Write-Host "Setting as default WSL distro"
+					# Note: Using wsl.exe here, but have also Set-DefaultDistro which access registry.
+					wsl.exe --set-default $Name
+					if ($LastExitCode -ne 0) {
+						Write-Warning "Failed to set as default WSL distro (error code ${LastExitCode})"
 					}
 				}
+
+				# Fetch some status info about the newly installed distro just to inform user
+				$DistroInfo = Get-DistroSystemInfo -Name $Name
+				if ($DistroInfo.Id -eq 'debian') {
+					# TODO:
+					# - Could compare actual version numbers.
+					# - Could also compare version code against configured PackageSourceCodeName to see if upgraded according to current source or not.
+					# - Could update/update for the user by running necessary commands, but then this requires internet access,
+					#   and on systems where VPNKit is required then another distro must have already been installed and running VPNKit,
+					#   and also it soon gets a bit complex to handle any state problem free..
+					if ($DistroInfo.VersionCodeName) {
+						$LatestVersion, $LatestCodeName = Invoke-RestMethod -Uri 'https://deb.debian.org/debian/dists/stable/Release' -DisableKeepAlive | Select-String -Pattern '(?m)^Version:\s*(.*)\n.*Codename:\s*(.*)$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1,2 | Select-Object -ExpandProperty Value
+						if ($LatestCodeName -and $LatestCodeName -ne $DistroInfo.VersionCodeName) {
+							Write-Host "Note: There is a newer stable release of Debian that you can upgrade to: $($DistroInfo.Version) ($($DistroInfo.VersionCodeName)) -> ${LatestVersion} (${LatestCodeName})"
+						} elseif ($DistroInfo.Version -and $LatestVersion -and $DistroInfo.Version -ne $LatestVersion) {
+							Write-Host "Note: There are updates available for the current release of Debian: $($DistroInfo.Version) -> ${LatestVersion}"
+						}
+					}
+				}
+				Write-Host "WSL distro '$(if($Name){$Name}else{'(default)'})' has been created with $($DistroInfo.ShortName)"
 			}
-			Write-Host "WSL distro '$(if($Name){$Name}else{'(default)'})' has been created with $($DistroInfo.ShortName)"
 		}
 	}
 	finally
@@ -2099,15 +2094,7 @@ function New-VpnKit
 			$DownloadUrl = "https://desktop.docker.com/win/stable/${DownloadName}"
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
-			# Extract vpnkit.exe executable and docker-for-wsl.iso from installer
-			&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" 'resources\vpnkit.exe' 'resources\wsl\docker-for-wsl.iso' | Out-Verbose
-			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
-			# Extract vpnkit-tap-vsockd executable from docker-for-wsl.iso
-			$IsoPath = (Join-Path $TempDirectory 'resources\wsl\docker-for-wsl.iso')
-			&$SevenZipPath x -y "-o${TempDirectory}" $IsoPath 'containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd' | Out-Verbose
-			if ($LastExitCode -ne 0) { throw "Extraction of ${IsoPath} failed with error $LastExitCode" }
-			# Move executables into destination, replace any existing (due to -Force).
-			# But if win executable is currently running the move will fail unless we kill it ifrst
+			# If existing win executable is currently running overwriting it will fail unless we kill it ifrst
 			$DestinationExe = Join-Path $Destination 'vpnkit.exe'
 			$DestinationProcesses = Get-Process | Where-Object -Property Path -eq $DestinationExe
 			if ($DestinationProcesses) {
@@ -2115,11 +2102,16 @@ function New-VpnKit
 					$DestinationProcesses | Stop-Process -Force:$Force # If -Force then stop without prompting for confirmation (default is to prompt before stopping any process that is not owned by the current user)
 				} # else: Just try anyway, with a probable error being the result?
 			}
-			Move-Item -Force -LiteralPath (Join-Path $TempDirectory 'resources\vpnkit.exe') -Destination $Destination
-			Move-Item -Force -LiteralPath (Join-Path $TempDirectory 'containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd') -Destination $Destination
-			# Clean up
-			Remove-Item -LiteralPath (Join-Path $TempDirectory 'resources') -Recurse
-			Remove-Item -LiteralPath (Join-Path $TempDirectory 'containers') -Recurse
+			# Extract from installer executable vpnkit.exe into destination and image docker-for-wsl.iso into tempdirectory
+			&$SevenZipPath e -y "-o${Destination}" "${DownloadFullName}" 'resources\vpnkit.exe' | Out-Verbose
+			&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" 'resources\wsl\docker-for-wsl.iso' | Out-Verbose
+			Remove-Item -LiteralPath $DownloadFullName
+			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+			# Extract vpnkit-tap-vsockd executable from docker-for-wsl.iso into destination
+			$DownloadFullName = (Join-Path $TempDirectory 'docker-for-wsl.iso')
+			&$SevenZipPath e -y "-o${Destination}" $DownloadFullName 'containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd' | Out-Verbose
+			Remove-Item -LiteralPath $DownloadFullName
+			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
 		}
 
 		#
@@ -2137,14 +2129,8 @@ function New-VpnKit
 			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/jstarks/npiperelay/releases/latest" -DisableKeepAlive -Headers $GitHubApiHeaders | Select-Object -ExpandProperty assets | Where-Object { $_.name -match $DownloadName } | Select-Object -First 1 | Select-Object -ExpandProperty browser_download_url
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
 			Save-File -Url $DownloadUrl -Path $DownloadFullName -Credential $GitHubCredential
-			# Extract executable, copy into destination and clean up
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
-			#&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" 'npiperelay.exe' | Out-Verbose
-			#if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
-			Expand-Archive -LiteralPath $DownloadFullName -DestinationPath $TempDirectory
-			Remove-Item -LiteralPath $DownloadFullName, (Join-Path $TempDirectory 'LICENSE'), (Join-Path $TempDirectory 'README.md')
-			# Move executables into destination, replace any existing (due to -Force).
-			# But if win executable is currently running the move will fail unless we kill it ifrst
+			# If existing win executable is currently running overwriting it will fail unless we kill it ifrst
 			$DestinationExe = Join-Path $Destination 'npiperelay.exe'
 			$DestinationProcesses = Get-Process | Where-Object -Property Path -eq $DestinationExe
 			if ($DestinationProcesses) {
@@ -2152,7 +2138,10 @@ function New-VpnKit
 					$DestinationProcesses | Stop-Process -Force:$Force # If -Force then stop without prompting for confirmation (default is to prompt before stopping any process that is not owned by the current user)
 				} # else: Just try anyway, with a probable error being the result?
 			}
-			Move-Item -Force -LiteralPath (Join-Path $TempDirectory 'npiperelay.exe') -Destination $Destination
+			# Extract executable into destination, replace any existing.
+			&$SevenZipPath e -y "-o${Destination}" "${DownloadFullName}" 'npiperelay.exe' | Out-Verbose
+			Remove-Item -LiteralPath $DownloadFullName
+			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
 		}
 
 		#
