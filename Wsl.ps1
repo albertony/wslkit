@@ -327,6 +327,60 @@ function Save-File
 }
 
 # .SYNOPSIS
+# Utility function to install a single file from a temporary download location to the final destination.
+# Checks for existing file, uses checksum to decide if identical and if it needs to be replaced.
+# NOTE: The source file will be moved into destination or deleted!
+function Install-File
+{
+	[CmdletBinding()]
+	param
+	(
+		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $FileName,
+		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $SourceDirectory,
+		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $DestinationDirectory,
+		[switch] $CheckRunningProcess,
+		[switch] $Force
+	)
+	$SourceFullName = Join-Path $SourceDirectory $FileName
+	$DestinationFullName = Join-Path $DestinationDirectory $FileName
+	Write-Verbose "Installing '${FileName}' to '${DestinationDirectory}'"
+	if (Test-Path -LiteralPath $DestinationFullName) {
+		Write-Verbose "Already exists: ${DestinationFullName}"
+		$ExistingHash = Get-FileHash -LiteralPath $DestinationFullName | Select-Object -ExpandProperty Hash
+		Write-Verbose "Checksum existing: `"${ExistingHash}`""
+		$DownloadHash = Get-FileHash -LiteralPath $SourceFullName | Select-Object -ExpandProperty Hash
+		Write-Verbose "Checksum download: `"${DownloadHash}`""
+		if ($Force -or $DownloadHash -ne $ExistingHash) {
+			if ($DownloadHash -ne $ExistingHash) {
+				Write-Host "Replacing different existing file '${FileName}'"
+			} else {
+				Write-Host "Replacing identical existing file '${FileName}' due to -Force option"
+			}
+			# Move executables into destination, replace any existing (due to -Force).
+			if ($CheckRunningProcess) {
+				# But if win executable is currently running the move will fail unless we kill it ifrst
+				$DestinationProcesses = Get-Process | Where-Object -Property Path -eq $DestinationFullName
+				if ($DestinationProcesses) {
+					if ($Force -or $PSCmdlet.ShouldContinue("The executable '${FileName}' in destination is currently running.`nIt must be stopped to be able to overwrite it.`nDo you want to stop it now?", "Stop ${FileName}")) {
+						$DestinationProcesses | Stop-Process -Force:$Force # If -Force then stop without prompting for confirmation (default is to prompt before stopping any process that is not owned by the current user)
+					} # else: Just try anyway, with a probable error being the result?
+				}
+			}
+			Move-Item -Force -LiteralPath $SourceFullName -Destination $DestinationDirectory
+			$true # Return true to indicate the file was installed
+		} else {
+			Write-Host "Keeping identical existing file '${FileName}'"
+			Remove-Item -LiteralPath $SourceFullName
+			$false # Return false to indicate the file was not installed
+		}
+	} else {
+		Write-Verbose "Installing new file '${FileName}'"
+		Move-Item -Force -LiteralPath $SourceFullName -Destination $DestinationDirectory
+		$true # Return true to indicate the file was installed
+	}
+}
+
+# .SYNOPSIS
 # Utility function to get path to 7-Zip utility, downloading it if necessary.
 function Get-SevenZip
 {
@@ -2013,7 +2067,24 @@ function Stop-Wsl
 #
 # Can be re-run at any time to update an existing directory, e.g. when there is
 # a new version of third party executables npiperelay or vpnkit part of
-# Docker Desktop.
+# Docker Desktop. The function will download the latest version of external tools,
+# and generate script/configuration files, in a temporary directory, then compare
+# checksums to existing, and only update (overwrite) if there is a difference.
+# At the end it will report if there were any changes, in which case you would want
+# to re-run Install-VpnKit to update the VPNKit installed in any distros.
+#
+# If the vpnkit is already running, existing Windows executables cannot be overwritten,
+# so the script will ask for permission to stop them.
+#
+# Option -Force will always overwrite any existing, as well as stop stop any running
+# processes for executables to be updated.
+#
+# Option -Confirm will let you decide what to do for each individual part, e.g. to
+# only download npiperelay and skip everything else.
+#
+# Note that some of the generated scripts will have a reference back to the
+# specific path these are generated into, so if this path changes then these must
+# be manually updated, or you should re-run this function.
 #
 # There is no Remove-VpnKit function, you can just delete the program directory
 # for example with standard PowerShell command Remove-Item.
@@ -2026,11 +2097,6 @@ function Stop-Wsl
 # - wsl-vpnkit-install, wsl-vpnkit-uninstall, wsl-vpnkit-configure,
 #   wsl-vpnkit-unconfigure (Linux/WSL2 shell scripts) generated.
 # - resolv.conf and wsl.conf (Linux/WSL2 DNS configuration files) generated.
-#
-# Note that some of the generated scripts will have a reference back to the
-# specific path these are generated into, so if this path changes then these must
-# be manually updated, or you should re-run this function. It will overwrite existing
-# by default, but run with -Confirm to decide for each individual part.
 #
 # Note also that when installing the VPNKit into a WSL distribution, you must refer to
 # a directory containing the files created by New-VpnKit, and the generated script
@@ -2056,14 +2122,15 @@ function New-VpnKit
 		# but will be temporarily downloaded if not found.
 		[string[]] $SevenZip = ("7z", ".\7z"),
 
-		# Force stop processes necessary to update existing executables.
-		# Default is to ask.
+		# Replace existing even if identical (comparing checksums), default is to skip.
+		# Force stop processes necessary to update existing executables, default is to ask.
 		[switch] $Force
 	)
 
 	$Destination = Get-Directory -Path $Destination -Create
 	$WorkingDirectory = Get-Directory -Path $WorkingDirectory -Create
 	$TempDirectory = $null # Lazy-create, when/if first needed!
+	$NewInstalls = 0
 	try
 	{
 
@@ -2094,24 +2161,25 @@ function New-VpnKit
 			$DownloadUrl = "https://desktop.docker.com/win/stable/${DownloadName}"
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
-			# If existing win executable is currently running overwriting it will fail unless we kill it ifrst
-			$DestinationExe = Join-Path $Destination 'vpnkit.exe'
-			$DestinationProcesses = Get-Process | Where-Object -Property Path -eq $DestinationExe
-			if ($DestinationProcesses) {
-				if ($Force -or $PSCmdlet.ShouldContinue("The executable vpnkit.exe in destination is currently running.`nIt must be stopped to be able to overwrite it.`nDo you want to stop it now?", "Stop vpnkit.exe")) {
-					$DestinationProcesses | Stop-Process -Force:$Force # If -Force then stop without prompting for confirmation (default is to prompt before stopping any process that is not owned by the current user)
-				} # else: Just try anyway, with a probable error being the result?
-			}
-			# Extract from installer executable vpnkit.exe into destination and image docker-for-wsl.iso into tempdirectory
-			&$SevenZipPath e -y "-o${Destination}" "${DownloadFullName}" 'resources\vpnkit.exe' | Out-Verbose
-			&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" 'resources\wsl\docker-for-wsl.iso' | Out-Verbose
+			# Extract vpnkit.exe executable and docker-for-wsl.iso from installer into temp
+			Write-Verbose "Extracting 'vpnkit.exe' and 'docker-for-wsl.iso' from '${DownloadName}'"
+			&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" 'resources\vpnkit.exe' 'resources\wsl\docker-for-wsl.iso' | Out-Verbose
 			Remove-Item -LiteralPath $DownloadFullName
 			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
-			# Extract vpnkit-tap-vsockd executable from docker-for-wsl.iso into destination
+			# Extract vpnkit-tap-vsockd executable from docker-for-wsl.iso into temp
+			Write-Verbose "Extracting 'vpnkit-tap-vsockd' from 'docker-for-wsl.iso'"
 			$DownloadFullName = (Join-Path $TempDirectory 'docker-for-wsl.iso')
-			&$SevenZipPath e -y "-o${Destination}" $DownloadFullName 'containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd' | Out-Verbose
+			&$SevenZipPath e -y "-o${TempDirectory}" $DownloadFullName 'containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd' | Out-Verbose
 			Remove-Item -LiteralPath $DownloadFullName
 			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+			# Move vpnkit.exe into destination if different than existing, stop running process if necessary
+			if (Install-File -FileName 'vpnkit.exe' -SourceDirectory $TempDirectory -DestinationDirectory $Destination -CheckRunningProcess -Force:$Force) {
+				++$NewInstalls
+			}
+			# Move vpnkit-tap-vsockd into destination if different than existing
+			if (Install-File -FileName 'vpnkit-tap-vsockd' -SourceDirectory $TempDirectory -DestinationDirectory $Destination -Force:$Force) {
+				++$NewInstalls
+			}
 		}
 
 		#
@@ -2130,18 +2198,14 @@ function New-VpnKit
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
 			Save-File -Url $DownloadUrl -Path $DownloadFullName -Credential $GitHubCredential
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
-			# If existing win executable is currently running overwriting it will fail unless we kill it ifrst
-			$DestinationExe = Join-Path $Destination 'npiperelay.exe'
-			$DestinationProcesses = Get-Process | Where-Object -Property Path -eq $DestinationExe
-			if ($DestinationProcesses) {
-				if ($Force -or $PSCmdlet.ShouldContinue("The executable npiperelay.exe in destination is currently running.`nIt must be stopped to be able to overwrite it.`nDo you want to stop it now?", "Stop npiperelay.exe")) {
-					$DestinationProcesses | Stop-Process -Force:$Force # If -Force then stop without prompting for confirmation (default is to prompt before stopping any process that is not owned by the current user)
-				} # else: Just try anyway, with a probable error being the result?
-			}
-			# Extract executable into destination, replace any existing.
-			&$SevenZipPath e -y "-o${Destination}" "${DownloadFullName}" 'npiperelay.exe' | Out-Verbose
+			# Extract executable into temp
+			&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" 'npiperelay.exe' | Out-Verbose
 			Remove-Item -LiteralPath $DownloadFullName
 			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+			# Move into destination if different than existing, stop running process if necessary
+			if (Install-File -FileName 'npiperelay.exe' -SourceDirectory $TempDirectory -DestinationDirectory $Destination -CheckRunningProcess -Force:$Force) {
+				++$NewInstalls
+			}
 		}
 
 		#
@@ -2152,8 +2216,9 @@ function New-VpnKit
 		{
 			Write-Host "Getting wsl-vpnkit..."
 			# Download script from GitHub repo
+			if (-not $TempDirectory) { $TempDirectory = New-TempDirectory -Path $WorkingDirectory }
 			$DownloadName = 'wsl-vpnkit'
-			$DownloadFullName = Join-Path $Destination $DownloadName
+			$DownloadFullName = Join-Path $TempDirectory $DownloadName
 			$GitHubApiHeaders = Get-GitHubApiAuthenticationHeaders -Credential $GitHubCredential
 			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/wsl-vpnkit/contents/${DownloadName}" -DisableKeepAlive -Headers $GitHubApiHeaders | Select-Object -ExpandProperty download_url
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
@@ -2168,6 +2233,10 @@ function New-VpnKit
 			$FileContent = $FileContent -replace "\nVPNKIT_PATH=.*?\n", "`nVPNKIT_PATH=`${VPNKIT_PATH:-${DestinationMount}/vpnkit.exe}`n"
 			$FileContent = $FileContent -replace "\nVPNKIT_NPIPERELAY_PATH=.*?\n", "`nVPNKIT_NPIPERELAY_PATH=`${VPNKIT_NPIPERELAY_PATH:-${DestinationMount}/npiperelay.exe}`n"
 			[System.IO.File]::WriteAllText($DownloadFullName, $FileContent, (New-Object System.Text.UTF8Encoding $false))
+			# Move into destination if different than existing
+			if (Install-File -FileName $DownloadName -SourceDirectory $TempDirectory -DestinationDirectory $Destination -Force:$Force) {
+				++$NewInstalls
+			}
 		}
 
 		#
@@ -2180,14 +2249,21 @@ function New-VpnKit
 		if ($PSCmdlet.ShouldProcess("wsl.conf and resolv.conf", "Create DNS configuration files"))
 		{
 			Write-Host "Creating DNS configuration files..."
+			if (-not $TempDirectory) { $TempDirectory = New-TempDirectory -Path $WorkingDirectory }
 
 			# /etc/wsl.conf : Must stop WSL from generating /etc/resolv.conf, since we need to put the vpnkit gateway IP in there.
 			# Note: The wsl-vpnkit-install script does only use this wsl.conf file if there not is already one, in other
 			# cases it tries to update the existing instead to keep any other configuration.
-			[System.IO.File]::WriteAllText((Join-Path $Destination 'wsl.conf'),
+			$FileName = 'wsl.conf'
+			# Generate file into temporary directory
+			[System.IO.File]::WriteAllText((Join-Path $TempDirectory $FileName),
 				"[network]`n" + `
 				"generateResolvConf = false`n",
 				(New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
+			# Move into destination if different than existing, else just remove it.
+			if (Install-File -FileName $FileName -SourceDirectory $TempDirectory -DestinationDirectory $Destination -Force:$Force) {
+				++$NewInstalls
+			}
 
 			# /etc/resolv.conf : Set the hard-coded IP (192.168.67.1) of the VPNKit gateway,
 			# as the default nameserver and a free, public DNS service as secondary nameserver
@@ -2204,12 +2280,18 @@ function New-VpnKit
 			# it will be slower because it will wait for timeout from the vpnkit ip first, but then there may not be internet
 			# connection at all when not vpnkit is running!
 			# Note: Hard coding gateway IP for wsl-vpnkit, assuming wsl-vpnkit is using VPNKIT_GATEWAY_IP="192.168.67.1"!
-			[System.IO.File]::WriteAllText((Join-Path $Destination 'resolv.conf'),
+			$FileName = 'resolv.conf'
+			# Generate file into temporary directory
+			[System.IO.File]::WriteAllText((Join-Path $TempDirectory 'resolv.conf'),
 				"# VPNKit gateway / Windows host DNS resolver`n" + `
 				"nameserver 192.168.67.1`n" + `
 				"# Public DNS server from Cloudfare`n" + `
 				"nameserver 1.1.1.1`n",
 				(New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
+			# Move into destination if different than existing, else just remove it.
+			if (Install-File -FileName $FileName -SourceDirectory $TempDirectory -DestinationDirectory $Destination -Force:$Force) {
+				++$NewInstalls
+			}
 		}
 
 		#
@@ -2218,6 +2300,7 @@ function New-VpnKit
 		if ($PSCmdlet.ShouldProcess("wsl-vpnkit-install, wsl-vpnkit-uninstall, wsl-vpnkit-configure, and wsl-vpnkit-unconfigure", "Create VPNKit utility scripts"))
 		{
 			Write-Host "Creating VPNKit utility scripts..."
+			if (-not $TempDirectory) { $TempDirectory = New-TempDirectory -Path $WorkingDirectory }
 
 			# Install script
 			# NOTE: This is intended only to be executed from host during initial install, and are tied
@@ -2230,9 +2313,11 @@ function New-VpnKit
 			# find them in the host location. By copying into wsl we avoid the reference back to host location.
 			# By linking to host location it can easily be upgraded to new version without working with wsl,
 			# which could also be a downside if there are breaking changes, different versions in use etc..
+			$FileName = 'wsl-vpnkit-install'
 			$DestinationRoot = [System.IO.Path]::GetPathRoot($Destination)
 			$DestinationWslMount = "/mnt/$($Destination.Replace($DestinationRoot, $DestinationRoot.ToLower().Replace(':','')).Replace('\','/'))"
-			[System.IO.File]::WriteAllText((Join-Path $Destination 'wsl-vpnkit-install'),
+			# Generate file into temporary directory
+			[System.IO.File]::WriteAllText((Join-Path $TempDirectory $FileName),
 				"#!/bin/sh`n" + `
 				"if [ `${EUID:-`$(id -u)} -ne 0 ]; then echo 'Please run this script as root'; exit 1; fi`n" + `
 				# WSL-VPNKit script
@@ -2253,6 +2338,10 @@ function New-VpnKit
 				"cp `"${DestinationWslMount}/wsl-vpnkit-unconfigure`" /usr/local/bin/`n" + `
 				"cp `"${DestinationWslMount}/wsl-vpnkit-uninstall`" /usr/local/bin/`n",
 				(New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
+			# Move into destination if different than existing, else just remove it.
+			if (Install-File -FileName $FileName -SourceDirectory $TempDirectory -DestinationDirectory $Destination -Force:$Force) {
+				++$NewInstalls
+			}
 
 			# Configure script
 			# This will create DNS configuration files /etc/wsl.conf and /etc/resolv.conf
@@ -2269,7 +2358,9 @@ function New-VpnKit
 			# changed configuration and will either create a symlink over our physical file or replace
 			# it with a autogenerated physical file! Immediately shutting down WSL (wsl.exe --shutdown)
 			# seems to be necessary to prevent this!
-			[System.IO.File]::WriteAllText((Join-Path $Destination 'wsl-vpnkit-configure'),
+			$FileName = 'wsl-vpnkit-configure'
+			# Generate file into temporary directory
+			[System.IO.File]::WriteAllText((Join-Path $TempDirectory $FileName),
 				"#!/bin/sh`n" + `
 				"if [ `${EUID:-`$(id -u)} -ne 0 ]; then echo 'Please run this script as root'; exit 1; fi`n" + `
 				# Generate /etc/wsl.conf
@@ -2292,9 +2383,13 @@ function New-VpnKit
 				"echo `"# Public DNS server from Cloudfare`" >> /etc/resolv.conf`n" + `
 				"echo `"nameserver 1.1.1.1`" >> /etc/resolv.conf`n",
 				(New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
+			# Move into destination if different than existing, else just remove it.
+			if (Install-File -FileName $FileName -SourceDirectory $TempDirectory -DestinationDirectory $Destination -Force:$Force) {
+				++$NewInstalls
+			}
 
 			# Uninstall
-			# Remove files and revert configuration added by install and configure scripts. 
+			# Remove files and revert configuration added by install and configure scripts.
 			# NOTE: Will not just revert changes from install, but also configure, to avoid
 			# inconsistent state. This differs from install process, where install must be
 			# followed by configure. There is an unconfigure script to revert only changes
@@ -2310,7 +2405,9 @@ function New-VpnKit
 			# auto generate it anyway, since we remove the generateResolvConf=false setting.
 			# NOTE: May have to shut down WSL (wsl.exe --shutdown) to force WSL to consider
 			# the config changes and autogenerate the resolv.conf again.
-			[System.IO.File]::WriteAllText((Join-Path $Destination 'wsl-vpnkit-uninstall'),
+			$FileName = 'wsl-vpnkit-uninstall'
+			# Generate file into temporary directory
+			[System.IO.File]::WriteAllText((Join-Path $TempDirectory $FileName),
 				"#!/bin/sh`n" + `
 				"if [ `${EUID:-`$(id -u)} -ne 0 ]; then echo 'Please run this script as root'; exit 1; fi`n" + `
 				# Perform same as unconfigure does, reverting changes from configure
@@ -2324,6 +2421,10 @@ function New-VpnKit
 				"[ -f /usr/local/bin/wsl-vpnkit-unconfigure ] && rm /usr/local/bin/wsl-vpnkit-unconfigure`n" + `
 				"[ -f /usr/local/bin/wsl-vpnkit-uninstall ] && rm /usr/local/bin/wsl-vpnkit-uninstall`n", # Note: At the end delete the installed copy of current script, may or may not be the one currently running!
 				(New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
+			# Move into destination if different than existing, else just remove it.
+			if (Install-File -FileName $FileName -SourceDirectory $TempDirectory -DestinationDirectory $Destination -Force:$Force) {
+				++$NewInstalls
+			}
 
 			# Unconfigure
 			# Separate script for reverting changes from the configure script.
@@ -2334,12 +2435,24 @@ function New-VpnKit
 			# within wsl. Install-VpnKit will copy this into the wsl distro so that the VPNKit
 			# configuration can be easily reverted from within the distro without dependency
 			# to host.
-			[System.IO.File]::WriteAllText((Join-Path $Destination 'wsl-vpnkit-unconfigure'),
+			$FileName = 'wsl-vpnkit-unconfigure'
+			# Generate file into temporary directory
+			[System.IO.File]::WriteAllText((Join-Path $TempDirectory $FileName),
 				"#!/bin/sh`n" + `
 				"if [ `${EUID:-`$(id -u)} -ne 0 ]; then echo 'Please run this script as root'; exit 1; fi`n" + `
 				"[ -f /etc/resolv.conf ] && rm /etc/resolv.conf`n" + `
 				"[ -f /etc/wsl.conf ] && sed -i '/^[ \t]*generateResolvConf[ \t]*=[ \t]*false/d' /etc/wsl.conf`n", # Delete any and all lines setting generateResolvConf to false
 				(New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
+			# Move into destination if different than existing, else just remove it.
+			if (Install-File -FileName $FileName -SourceDirectory $TempDirectory -DestinationDirectory $Destination -Force:$Force) {
+				++$NewInstalls
+			}
+		}
+
+		if ($NewInstalls -gt 0) {
+			Write-Host "${NewInstalls} new files installed, use Install-VpnKit to install/update distros!"
+		} else {
+			Write-Host "No new files installed"
 		}
 	}
 	finally
