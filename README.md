@@ -121,20 +121,34 @@ an "officially approved" method for installing WSL distros!
 The second main functionality of this project and the main PowerShell script
 is the support for [VPNKit](https://github.com/moby/vpnkit). This is a set of
 tools providing customized, VPN/antivirus/firewall-friendly, network connectivity
-from a network device in the VM used to host WSL2 distros, via a unix socket and
-Windows named pipe, to a gateway process running on the host, routing traffic to
-the host network device. Docker Desktop with WSL2 backend is using much of the same
-system, the core parts used here are actually taken from the Docker Desktop toolset.
+from a network device in the VM used to host WSL2 distros.
 
 The problem with the Hyper-V based networking that is default in WSL, is that
 it can easily be problematic with VPN, and will be entirely blocked by some
 antivirus/firewall software etc. Read more [here](https://github.com/moby/vpnkit#why-is-this-needed).
 
-The main part of this functionality is a shell script `wsl-vpnkit` from repository
-[github.com/albertony/wsl-vpnkit](https://github.com/albertony/wsl-vpnkit). This is
-my own fork of [github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit),
-which was also the main inspiration for all the VPNKit related functionality in the
-current repository. The main reason for using my own fork is to ensure compatibility.
+The mechanism used is to route network traffic from the distro, via a unix socket
+and a Windows named pipe, to a gateway process running on the host, into the host
+network device. Docker Desktop with WSL2 backend is using much of the same method,
+the core components used here, including the VPNKit executable, are actually taken
+from the Docker Desktop toolset. For background information, read the vpnkit documentation
+[Plumbing inside Docker for Windows](https://github.com/moby/vpnkit/blob/master/docs/ethernet.md#plumbing-inside-docker-for-windows).
+The main difference from Docker's approach, is that instead of using Hyper-V sockets
+between the host and VM, we use regular Windows named pipes, with help of the
+[socat](https://linux.die.net/man/1/socat) utility in the WSL VM and the
+[npiperelay](https://github.com/jstarks/npiperelay) utility on the Windows host.
+
+The administration and execution of VPNKit is handled by a shell script [wsl-vpnkit](wsl-vpnkit/wsl-vpnkit),
+which is forked from [github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit).
+That project was also the main inspiration for all the VPNKit related functionality in the
+current repository. My functionality is based on the original version, where it was
+simply this shell script and a set of manual tasks to get it running, see the
+[VPNKit manual install](#vpnkit-manual-install) section below for details. My `Wsl.ps1`
+script has functions `New-VpnKit` and `Install-VpnKit` that does all the needed steps
+for you. On September 20, 2021, the original [sakai135](https://github.com/sakai135/wsl-vpnkit)
+repository changed to use a separate Alpine distro, and supply a pre-built version
+for download. The original version, which I'm based on, is kept as release [v0.1.0-20210916.4273cb7]
+(https://github.com/sakai135/wsl-vpnkit/tree/v0.1.0-20210916.4273cb7).
 
 The `wsl-vpnkit` documentation was initially written with the assumption that you
 have network connectivity using the default WSL networking, but needed the customized
@@ -145,14 +159,6 @@ do you do that? What you can do is to download the package archive files on your
 computer, and install them from file in the WSL distribution using its package tool
 in "offline-mode". The `Install-VpnKit` function of my `Wsl.ps1` does this for you.
 See the [VPNKit manual install](#vpnkit-manual-install) section below for details.
-
-If you want to know more, read the vpnkit documentation for background information
-about the pipe based networking used by Docker with VPNKit:
-[Plumbing inside Docker for Windows](https://github.com/moby/vpnkit/blob/master/docs/ethernet.md#plumbing-inside-docker-for-windows).
-The method used by wsl-vpnkit is very similar, although instead of using Hyper-V sockets
-between the host and VM, it uses regular Windows named pipes, with help of the
-[socat](https://linux.die.net/man/1/socat) utility in the WSL VM and the
-[npiperelay](https://github.com/jstarks/npiperelay) utility on the Windows host.
 
 #### Docker
 
@@ -555,14 +561,14 @@ specify its path with parameter `-SevenZip "path\to\your\7z.exe"`.
 
 One of the main purposes of the PowerShell script [Wsl.ps1](Wsl.ps1) provided by
 this project, is to automate the steps necessary to install and run VPNKit.
-The required steps are described in the [wsl-vpnkit](https://github.com/albertony/wsl-vpnkit)
-documentation. The example commands there are for execution from within WSL, which
-requires you to already have internet access. Here are the same steps described
-for running them on the host, and with some more detail:
+The required steps are described in the [wsl-vpnkit](wsl-vpnkit) documentation.
+The example commands there are for execution from within WSL, which requires you to
+already have internet access. Here are the same steps described for running them
+on the host, and with some more detail:
 - Install `socat` with the WSL distro's package manager. When you do not have internet
   access from the WSL distro yet, you will have to download the packages on host and
   install them from local path, as described below.
-- Download the [wsl-vpnkit](https://raw.githubusercontent.com/albertony/wsl-vpnkit/main/wsl-vpnkit)
+- Download the [wsl-vpnkit](https://raw.githubusercontent.com/albertony/wslkit/master/wsl-vpnkit/wsl-vpnkit)
   shell script, and copy it into the WSL file system (e.g. `/usr/local/bin`). From within WSL,
   you can copy it from a host location via the `/mnt/c/` automount, e.g. to copy from `C:\bin`
   on host to `/usr/local/bin` in distro filesystem:
@@ -684,3 +690,9 @@ to revert the changes. You can choose to install the full VPNKit on more than on
 only one can be run (`Start-VpnKit`) at the same time.
 
 See also [sample steps](#creating-additional-distribution) described above for creating additional distributions.
+
+## TODO
+
+- Rename `vpnkit.exe` to avoid interference with Docker Desktop, see [Docker](#docker).
+- Add support for running the wsl-vpnkit script in background and as a service,
+see [wsl-vpnkit](wsl-vpnkit#run-in-the-background).

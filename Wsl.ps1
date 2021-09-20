@@ -38,7 +38,7 @@
 # tools and configuration files for the VPNKit network setup, deployed into
 # the distro by Intall-VpnKit.
 # This includes:
-# - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/albertony/wsl-vpnkit (fork of https://github.com/sakai135/wsl-vpnkit)
+# - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/albertony/wslkit/wsl-vpnkit (fork of https://github.com/sakai135/wsl-vpnkit)
 # - vpnkit.exe (Windows executable) and vpnkit-tap-vsockd (Linux/WSL2 executable)
 #   from Docker Desktop for Windows: https://hub.docker.com/editions/community/docker-ce-desktop-windows/
 # - npiperelay.exe (Windows executable) from https://github.com/jstarks/npiperelay
@@ -2090,7 +2090,7 @@ function Stop-Wsl
 # for example with standard PowerShell command Remove-Item.
 #
 # The created directory will contain:
-# - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/albertony/wsl-vpnkit (fork of https://github.com/sakai135/wsl-vpnkit)
+# - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/albertony/wslkit/wsl-vpnkit (fork of https://github.com/sakai135/wsl-vpnkit)
 # - vpnkit.exe (Windows executable) and vpnkit-tap-vsockd (Linux/WSL2 executable)
 #   from Docker Desktop for Windows: https://hub.docker.com/editions/community/docker-ce-desktop-windows/
 # - npiperelay.exe (Windows executable) from https://github.com/jstarks/npiperelay
@@ -2106,7 +2106,7 @@ function Stop-Wsl
 # .LINK
 # Install-VpnKit
 # .LINK
-# https://github.com/albertony/wsl-vpnkit/
+# https://github.com/albertony/wslkit/wsl-vpnkit/
 function New-VpnKit
 {
 	[CmdletBinding(SupportsShouldProcess)]
@@ -2220,7 +2220,7 @@ function New-VpnKit
 			$DownloadName = 'wsl-vpnkit'
 			$DownloadFullName = Join-Path $TempDirectory $DownloadName
 			$GitHubApiHeaders = Get-GitHubApiAuthenticationHeaders -Credential $GitHubCredential
-			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/wsl-vpnkit/contents/${DownloadName}" -DisableKeepAlive -Headers $GitHubApiHeaders | Select-Object -ExpandProperty download_url
+			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/wslkit/contents/wsl-vpnkit/${DownloadName}" -DisableKeepAlive -Headers $GitHubApiHeaders | Select-Object -ExpandProperty download_url
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
 			Save-File -Url $DownloadUrl -Path $DownloadFullName -Credential $GitHubCredential
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
