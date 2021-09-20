@@ -48,6 +48,13 @@ fi
 #    `# Fuse library to be able to use cgofuse` \
 #    fuse2
 
+#    `# Python 3 (for utility scripts)` \
+#    python \
+#    python-pylint \
+#    python-pytest \
+#    ipython \
+
+
 #    `# Full CMake/Ninja build system for C++` \
 #    `# Ninja build-system` \
 #    ninja \
