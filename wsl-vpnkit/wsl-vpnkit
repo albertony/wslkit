@@ -90,6 +90,7 @@ fi
 relay &
 relay_wait
 vpnkit &
+sleep 1
 tap &
 tap_wait
 ipconfig
