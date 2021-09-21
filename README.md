@@ -164,18 +164,13 @@ See the [VPNKit manual install](#vpnkit-manual-install) section below for detail
 
 If you have Docker Desktop installed, it will include its own copy of the
 same `vpnkit.exe` as used by the `wsl-vpnkit` system. Upon start/stop it will
-terminate any running `vpnkit.exe` processes, which means it will also terminate
-such a process started by `wsl-vpnkit`, and you will need to restart it to get
-it to work again. A workaround introduced in the original
-[github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit)
-is to rename `vpnkit.exe` to `wsl-vpnkit.exe`, which avoids Docker Desktop
-from terminating it.
-
-The installation performed by the `Wsl.ps1`, functions `New-VpnKit`
-and `Install-VpnKit`, customizes the path to `vpnkit.exe` in the
-`wsl-vpnkit` launcher script. It does not currently use perform the rename,
-but keeps the original filename `vpnkit.exe`, and may therefore still be
-interfered by Docker Desktop. It is under consideration to change this.
+terminate any running `vpnkit.exe` processes, which means it would also terminate
+such a process started by `wsl-vpnkit`, and it would have to be restarted it to
+get it to work again. The workaround for this, as in the original
+[github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit),
+is to rename the copy of `vpnkit.exe` used for WSL into `wsl-vpnkit.exe`.
+This is done in the installation performed by the `Wsl.ps1`, functions
+`New-VpnKit` and `Install-VpnKit`.
 
 ### Linux distributions
 
@@ -605,6 +600,11 @@ on the host, and with some more detail:
      Move-Item "resources\vpnkit.exe" C:\bin
      Move-Item "containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd" C:\bin
      ```
+   - Note: If you are using Docker Desktop on the host computer, it will executing its
+     own vpnkit.exe, and upon start/stop it will terminate any running `vpnkit.exe` processes.
+     This means it would also terminate such a process started by `wsl-vpnkit`, and it
+     would have to be restarted it to get it to work again. The workaround for this
+     is to rename the copy of `vpnkit.exe` used for WSL into somethine else, e.g. `wsl-vpnkit.exe`.
 - Copy the `vpnkit-tap-vsockd` executable into into the WSL filesystem. Note that
   it must be put into `/sbin` and owned by root. For example, from within WSL prompt:
   ```
@@ -613,6 +613,7 @@ on the host, and with some more detail:
   ```
 - Make the `vpnkit.exe` executable accessible from the `wsl-vpnkit` script, just as
   with `npiperelay.exe` described above, but now with script variable `VPNKIT_PATH`.
+  If the executable was renamed, e.g. to `wsl-vpnkit.exe`, then this must also be considered.
 - Configure DNS as described in the [VPNKit manual configuration](#vpnkit-manual-configuration)
   section, below.
 - Finally, run the `wsl-vpnkit` script from the WSL distro to start the network services,
@@ -677,7 +678,7 @@ distro you will see that the same ip route is configured for "its" `eth1`.
 When the `wsl-vpnkit` script is started from one distro, it sets up the ip route and the
 process pipe relay from the shared virtual machine to the host machine. The only thing missing
 for a distribution to work through this connection is the DNS configuration, which is a
-distribution-specific configuration. By default the vpnkit gateway is bound to IP address
+distribution-specific configuration. By default the VPNKit gateway is bound to IP address
 `192.168.67.1`, so to configure the distro to use this as the nameserver you must
 add `nameserver 192.168.67.1` into file `/etc/resolv.conf`, and also `generateResolvConf = false`
 in section `[network]` of file `/etc/wsl.conf`.
@@ -690,9 +691,3 @@ to revert the changes. You can choose to install the full VPNKit on more than on
 only one can be run (`Start-VpnKit`) at the same time.
 
 See also [sample steps](#creating-additional-distribution) described above for creating additional distributions.
-
-## TODO
-
-- Rename `vpnkit.exe` to avoid interference with Docker Desktop, see [Docker](#docker).
-- Add support for running the wsl-vpnkit script in background and as a service,
-see [wsl-vpnkit](wsl-vpnkit#run-in-the-background).

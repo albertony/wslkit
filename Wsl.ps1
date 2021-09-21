@@ -39,7 +39,7 @@
 # the distro by Intall-VpnKit.
 # This includes:
 # - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/albertony/wslkit/wsl-vpnkit (fork of https://github.com/sakai135/wsl-vpnkit)
-# - vpnkit.exe (Windows executable) and vpnkit-tap-vsockd (Linux/WSL2 executable)
+# - wsl-vpnkit.exe (Windows executable) and vpnkit-tap-vsockd (Linux/WSL2 executable)
 #   from Docker Desktop for Windows: https://hub.docker.com/editions/community/docker-ce-desktop-windows/
 # - npiperelay.exe (Windows executable) from https://github.com/jstarks/npiperelay
 # - resolv.conf and wsl.conf (Linux/WSL2 DNS configuration files) generated.
@@ -73,24 +73,24 @@
 # with Intall-VpnKit first!
 # Note: If running multiple WSL distros, then the VPNKit script can
 # only run in one of them, but since all are effectively sharing a
-# single virtual machine they will all be able to use the vpnkit
+# single virtual machine they will all be able to use the VPNKit
 # networking. The one thing that should be notet is that the script
 # will update the DNS server settings in /etc/resolv.conf only on
 # the distro in which it is running. For other distros to use the
-# Windows host, via the vpnkit gateway, for DNS resolving, the
+# Windows host, via the VPNKit gateway, for DNS resolving, the
 # nameserver configuration in /etc/resolv.conf must already be set
 # correctly (or manually updated). The resolv.conf file generated
 # by New-VpnKit and copied into the distros by Intall-VpnKit
 # has hard-coded the IP 192.168.67.1 (and just in case, also a free,
 # public DNS service IP), which is taken from the current
 # version of the wsl-vpnkit, and is the value it sets as the gateway
-# address when starting vpnkit. So as long as you make sure to run
+# address when starting VPNKit. So as long as you make sure to run
 # New-VpnKit first, and then Intall-VpnKit for all distros,
 # then all should be using the same networking as long as
 # Start-VpnKit is executed on one of them. If you need to, you can
 # change the resolv.conf manually, but remember that the instance
 # you run Start-VpnKit in will temporarily replace it with its own
-# version using only the vpnkit gateway, and if you run Intall-VpnKit
+# version using only the VPNKit gateway, and if you run Intall-VpnKit
 # again it will replace the existing /etc/resolv.conf permanently.
 #
 # Various utilities:
@@ -135,7 +135,7 @@
 #   "Minimal root filesystem" distribution from alpinelinux.org,
 #   and Arch 2021.02.01 official "bootstrap" distribution.
 # - If there are problems with process already running, named pipe already
-#   existing etc: Check if you have a vpnkit.exe process on the host computer
+#   existing etc: Check if you have a wsl-vpnkit.exe process on the host computer
 #   and kill that, terminate the distro (wsl.exe --terminate) or
 #   shutdown entire WSL VM (wsl.exe --shutdown), and try again.
 # - To be able to run the VPNKit utility, the WSL distro installation must have
@@ -145,14 +145,14 @@
 #   this process automatically, in the Install-VpnKit method.
 # - The script installed in WSL will get a reference back to the program
 #   directory on host, in the default value of variable VPNKIT_PATH which must
-#   contain the path to vpnkit.exe. If this is moved then the script must be
+#   contain the path to wsl-vpnkit.exe. If this is moved then the script must be
 #   updated accordingly, or the VPNKIT_PATH variable must be overridden each
 #   time the script is executed.
 # - The /etc/resolv.conf created by Intall-VpnKit will contain a hard coded
-#   IP that is assumed to be the vpnkit gateway, so if this IP changes in the
+#   IP that is assumed to be the VPNKit gateway, so if this IP changes in the
 #   wsl-vpnkit launcher script then resolv.conf should be updated accordingly.
 #   The wsl-vpnkit launcher script will actually temporarily replace resolv.conf
-#   with a version containing the real vpnkit gateway IP, but if running other
+#   with a version containing the real VPNKit gateway IP, but if running other
 #   distros they will not get this update and uses the stored /etc/resolv.conf,
 #   normally with content from Intall-VpnKit.
 # - A previous version of the VPNKit script (wsl-vpnkit) had to be run in bash,
@@ -1971,10 +1971,16 @@ function Start-Distro
 	if ($WithVpnKit) {
 		# Begin by starting VPNKit as root in a new window (copied parts of code from Start-VpnKit)
 		if (-not $PSCmdlet.ShouldProcess("/usr/local/bin/wsl-vpnkit", "Run wsl-vpnkit as root")) { return }
-		# Check if already running and suggest stopping, but Docker Desktop is also executing its own vpnkit.exe so must not touch those!
-		$VpnKitProcesses = Get-Process -Name vpnkit -ErrorAction Ignore | Where-Object -Property CommandLine -like "*\\.\pipe\wsl-vpnkit*" # Note: Assuming named pipe used by wsl-vpnkit script!
+		# Check if already running and suggest stopping.
+		# Note: Docker Desktop is also executing its own vpnkit.exe so must not touch those!
+		# Previously avoided this by filtering processes on command line containing the named pipe,
+		# assuming default name used by wsl-vpnkit script:
+		#   | Where-Object -Property CommandLine -like "*\\.\pipe\wsl-vpnkit*" # Note: Additional 
+		# But later changed to renaming our own vpnkit.exe into wsl-vpnkit.exe because Docker Desktop
+		# will also kill any vpnkit.exe processes!
+		$VpnKitProcesses = Get-Process -Name 'wsl-vpnkit' -ErrorAction Ignore
 		if ($VpnKitProcesses) {
-			if ($PSCmdlet.ShouldContinue("There are $($VpnKitProcesses.Count) vpnkit process(es) already running. You can only run one VPNKit service`nat a time, and if you want to start a different one you should manually stop the existing.`nIf you think it is just stray vpnkit processes then terminating them is OK.`nDo you want to terminate existing vpnkit process(es)?`n$($VpnKitProcesses.Path -join '`n')", "Stop vpnkit.exe")) {
+			if ($PSCmdlet.ShouldContinue("There are $($VpnKitProcesses.Count) wsl-vpnkit process(es) already running. You can only run one VPNKit service`nat a time, and if you want to start a different one you should manually stop the existing.`nIf you think it is just stray wsl-vpnkit processes then terminating them is OK.`nDo you want to terminate existing wsl-vpnkit process(es)?`n$($VpnKitProcesses.Path -join '`n')", "Stop wsl-vpnkit.exe")) {
 				$VpnKitProcesses | Stop-Process -Force:$Force # If -Force then stop without prompting for confirmation (default is to prompt before stopping any process that is not owned by the current user)
 			}
 		}
@@ -2066,15 +2072,15 @@ function Stop-Wsl
 # but sets up all prerequisites to be able to run Install-VpnKit.
 #
 # Can be re-run at any time to update an existing directory, e.g. when there is
-# a new version of third party executables npiperelay or vpnkit part of
+# a new version of third party executables npiperelay or VPNKit part of
 # Docker Desktop. The function will download the latest version of external tools,
 # and generate script/configuration files, in a temporary directory, then compare
 # checksums to existing, and only update (overwrite) if there is a difference.
 # At the end it will report if there were any changes, in which case you would want
 # to re-run Install-VpnKit to update the VPNKit installed in any distros.
 #
-# If the vpnkit is already running, existing Windows executables cannot be overwritten,
-# so the script will ask for permission to stop them.
+# If the wsl-vpnkit process is already running, existing Windows executables cannot
+# be overwritten, so the script will ask for permission to stop them.
 #
 # Option -Force will always overwrite any existing, as well as stop stop any running
 # processes for executables to be updated.
@@ -2091,7 +2097,7 @@ function Stop-Wsl
 #
 # The created directory will contain:
 # - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/albertony/wslkit/wsl-vpnkit (fork of https://github.com/sakai135/wsl-vpnkit)
-# - vpnkit.exe (Windows executable) and vpnkit-tap-vsockd (Linux/WSL2 executable)
+# - wsl-vpnkit.exe (Windows executable) and vpnkit-tap-vsockd (Linux/WSL2 executable)
 #   from Docker Desktop for Windows: https://hub.docker.com/editions/community/docker-ce-desktop-windows/
 # - npiperelay.exe (Windows executable) from https://github.com/jstarks/npiperelay
 # - wsl-vpnkit-install, wsl-vpnkit-uninstall, wsl-vpnkit-configure,
@@ -2166,14 +2172,16 @@ function New-VpnKit
 			&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" 'resources\vpnkit.exe' 'resources\wsl\docker-for-wsl.iso' | Out-Verbose
 			Remove-Item -LiteralPath $DownloadFullName
 			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+			# Rename vpnkit.exe to wsl-vpnkit.exe, to avoid interference with Docker for Windows: It will look for any process named vpnkit.exe and kill it when it starts.
+			Rename-Item (Join-Path $TempDirectory 'vpnkit.exe') 'wsl-vpnkit.exe'
 			# Extract vpnkit-tap-vsockd executable from docker-for-wsl.iso into temp
 			Write-Verbose "Extracting 'vpnkit-tap-vsockd' from 'docker-for-wsl.iso'"
 			$DownloadFullName = (Join-Path $TempDirectory 'docker-for-wsl.iso')
 			&$SevenZipPath e -y "-o${TempDirectory}" $DownloadFullName 'containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd' | Out-Verbose
 			Remove-Item -LiteralPath $DownloadFullName
 			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
-			# Move vpnkit.exe into destination if different than existing, stop running process if necessary
-			if (Install-File -FileName 'vpnkit.exe' -SourceDirectory $TempDirectory -DestinationDirectory $Destination -CheckRunningProcess -Force:$Force) {
+			# Move wsl-vpnkit.exe into destination if different than existing, stop running process if necessary
+			if (Install-File -FileName 'wsl-vpnkit.exe' -SourceDirectory $TempDirectory -DestinationDirectory $Destination -CheckRunningProcess -Force:$Force) {
 				++$NewInstalls
 			}
 			# Move vpnkit-tap-vsockd into destination if different than existing
@@ -2230,7 +2238,7 @@ function New-VpnKit
 			if ($DestinationMount -notmatch '^(\w):(.*?)(?:/*)$') { throw "Destination must be a rooted path reachable from wsl via automount" }
 			$DestinationMount = "/mnt/$($Matches[1].ToLower())$($Matches[2])"
 			$FileContent = [System.IO.File]::ReadAllText($DownloadFullName, (New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
-			$FileContent = $FileContent -replace "\nVPNKIT_PATH=.*?\n", "`nVPNKIT_PATH=`${VPNKIT_PATH:-${DestinationMount}/vpnkit.exe}`n"
+			$FileContent = $FileContent -replace "\nVPNKIT_PATH=.*?\n", "`nVPNKIT_PATH=`${VPNKIT_PATH:-${DestinationMount}/wsl-vpnkit.exe}`n"
 			$FileContent = $FileContent -replace "\nVPNKIT_NPIPERELAY_PATH=.*?\n", "`nVPNKIT_NPIPERELAY_PATH=`${VPNKIT_NPIPERELAY_PATH:-${DestinationMount}/npiperelay.exe}`n"
 			[System.IO.File]::WriteAllText($DownloadFullName, $FileContent, (New-Object System.Text.UTF8Encoding $false))
 			# Move into destination if different than existing
@@ -2251,7 +2259,7 @@ function New-VpnKit
 			Write-Host "Creating DNS configuration files..."
 			if (-not $TempDirectory) { $TempDirectory = New-TempDirectory -Path $WorkingDirectory }
 
-			# /etc/wsl.conf : Must stop WSL from generating /etc/resolv.conf, since we need to put the vpnkit gateway IP in there.
+			# /etc/wsl.conf : Must stop WSL from generating /etc/resolv.conf, since we need to put the VPNKit gateway IP in there.
 			# Note: The wsl-vpnkit-install script does only use this wsl.conf file if there not is already one, in other
 			# cases it tries to update the existing instead to keep any other configuration.
 			$FileName = 'wsl.conf'
@@ -2268,17 +2276,17 @@ function New-VpnKit
 			# /etc/resolv.conf : Set the hard-coded IP (192.168.67.1) of the VPNKit gateway,
 			# as the default nameserver and a free, public DNS service as secondary nameserver
 			# (chosing 1.1.1.1, which is Cloudflare's free, pro-privacy, world's fastest, DNS service).
-			# Note: When wsl-vpnkit script is running it will replace the contents with the actual IP of the vpnkit.exe gateway process
+			# Note: When wsl-vpnkit script is running it will replace the contents with the actual IP of the wsl-vpnkit.exe gateway process
 			# that it uses, which in turn will use the DNS settings on the host computer.
 			# Note: If the wsl-vpnkit script is running on another wsl distro, it will configure network, socket and pipe connection
-			# to a vpnkit.exe process in host that it has started, and all this can be used by other wsl distros since they are
+			# to a wsl-vpnkit.exe process in host that it has started, and all this can be used by other wsl distros since they are
 			# effectively sharing a single virtual machine. But the changes that it does in resolv.conf will only be done within
 			# for the distro it is running in! By setting a public nameserver as default the other distros will work through the
-			# vpnkit network, but use the public nameserver for DNS resolving instead of the vpnkit which will consider any settings
-			# on the host. To make all distros use the vpnkit gateway we hardcode its IP as first nameserver, and then set the public
-			# nameserver second. Then as long as vpnkit is running it will be used. If not the public nameserver will be used,
-			# it will be slower because it will wait for timeout from the vpnkit ip first, but then there may not be internet
-			# connection at all when not vpnkit is running!
+			# VPNKit network, but use the public nameserver for DNS resolving instead of the VPNKit which will consider any settings
+			# on the host. To make all distros use the VPNKit gateway we hardcode its IP as first nameserver, and then set the public
+			# nameserver second. Then as long as VPNKit is running it will be used. If not the public nameserver will be used,
+			# it will be slower because it will wait for timeout from the VPNKit ip first, but then there may not be internet
+			# connection at all when not VPNKit is running!
 			# Note: Hard coding gateway IP for wsl-vpnkit, assuming wsl-vpnkit is using VPNKIT_GATEWAY_IP="192.168.67.1"!
 			$FileName = 'resolv.conf'
 			# Generate file into temporary directory
@@ -2305,8 +2313,8 @@ function New-VpnKit
 			# Install script
 			# NOTE: This is intended only to be executed from host during initial install, and are tied
 			# to the VPNKit program folder on host, but this is also the case for the main run script
-			# wsl-vpnkit which has path to vpnkit.exe on host!
-			# NOTE: The wsl-vpnkit script executes vpnkit.exe on host, and via socat also npiperelay.exe.
+			# wsl-vpnkit which has path to wsl-vpnkit.exe on host!
+			# NOTE: The wsl-vpnkit script executes wsl-vpnkit.exe on host, and via socat also npiperelay.exe.
 			# These can be copied into the wsl together with the other files in /usr/local/bin, even
 			# though it is a Windows executable, or can create a symlink there pointing back to the host
 			# location, or they can just be left on host and the wsl-vpnkit script can be configured to
@@ -2322,7 +2330,7 @@ function New-VpnKit
 				"if [ `${EUID:-`$(id -u)} -ne 0 ]; then echo 'Please run this script as root'; exit 1; fi`n" + `
 				# WSL-VPNKit script
 				"cp `"${DestinationWslMount}/wsl-vpnkit`" /usr/local/bin/`n" + `
-				# WSL-VPNKit Windows utilities (vpnkit.exe and npiperelay.exe)
+				# WSL-VPNKit Windows utilities (wsl-vpnkit.exe and npiperelay.exe)
 				# These can be copied into /usr/local/bin as well, or creating a symlink back to host,
 				# or the wsl-vpnkit script can be configured to find them in host location
 				#"cp `"${DestinationWslMount}/npiperelay.exe`" /usr/local/bin/`n" + ` # npiperelay option 1: Copy into wsl
@@ -2576,10 +2584,10 @@ function Install-VpnKit
 			Write-Host "cp `"${ProgramDirectoryWslMount}/wsl-vpnkit`" /usr/local/bin/"
 			Write-Host "cp `"${ProgramDirectoryWslMount}/vpnkit-tap-vsockd`" /sbin/" # Note: This one goes into the standard directory for root programs
 			Write-Host "chown root:root /sbin/vpnkit-tap-vsockd"
-			# Note: Could also update VPNKIT_PATH and VPNKIT_NPIPERELAY_PATH in wsl-vpnkit script with destination path to vpnkit.exe on host,
+			# Note: Could also update VPNKIT_PATH and VPNKIT_NPIPERELAY_PATH in wsl-vpnkit script with destination path to wsl-vpnkit.exe on host,
 			# but this is currently done in PowerShell above, so the source file is already correct at this point.
-			#$DestinationVpnKitExe = (Join-Path $Destination 'vpnkit.exe').Replace('\','\/')
-			#Write-Host "sed -i 's/VPNKIT_PATH=.*/VPNKIT_PATH=${DestinationVpnKitExe}/' /usr/local/bin/vpnkit.exe"
+			#$DestinationVpnKitExe = (Join-Path $Destination 'wsl-vpnkit.exe').Replace('\','\/')
+			#Write-Host "sed -i 's/VPNKIT_PATH=.*/VPNKIT_PATH=${DestinationVpnKitExe}/' /usr/local/bin/wsl-vpnkit.exe"
 			#Write-Host "sed -i 's/VPNKIT_NPIPERELAY_PATH=.*/VPNKIT_NPIPERELAY_PATH=${DestinationVpnKitExe}/' /usr/local/bin/npiperelay.exe"
 		}
 		else
@@ -3056,24 +3064,31 @@ function Start-VpnKit
 		# Start in the current console windows. Default is to start as a new console window.
 		[switch] $NoNewWindow,
 
-		# Force stop any existing vpnkit processes.
+		# Force stop any existing wsl-vpnkit processes.
 		# Default when neither -StopExisting nor -DontStopExisting is specified is to ask.
 		[switch] $StopExisting,
 		
-		# Don't ask to stop existing vpnkit processes.
+		# Don't ask to stop existing wsl-vpnkit processes.
 		# Default when neither -StopExisting nor -DontStopExisting is specified is to ask.
 		[switch] $DontStopExisting
 	)
 	$WslOptions = GetWslCommandDistroOptions -Name $Name
 	$DistroInfo = Get-DistroSystemInfo -Name $Name
 	if (-not $PSCmdlet.ShouldProcess("/usr/local/bin/wsl-vpnkit", "Run wsl-vpnkit as root from WSL distro '$(if($Name){$Name}else{'(default)'})' [$($DistroInfo.ShortName)]")) { return }
-	# Check if already running and suggest stopping, but Docker Desktop is also executing its own vpnkit.exe so must not touch those!
-	# Note that even if killing vpnkit.exe on host, if the existing vpnkit process was started from a wsl-vpnkit
-	# script in the same distro, then it will still fail with socat socket already exists etc! But sometimes it
-	# is just a stray vpnkit process, and then killing it automatically is convenient.
-	$VpnKitProcesses = Get-Process -Name vpnkit -ErrorAction Ignore | Where-Object -Property CommandLine -like "*\\.\pipe\wsl-vpnkit*" # Note: Assuming named pipe used by wsl-vpnkit script!
+	# Check if already running and suggest stopping.
+	# Note: Docker Desktop is also executing its own vpnkit.exe so must not touch those!
+	# Previously avoided this by filtering processes on command line containing the named pipe,
+	# assuming default name used by wsl-vpnkit script:
+	#   | Where-Object -Property CommandLine -like "*\\.\pipe\wsl-vpnkit*" # Note: Additional 
+	# But later changed to renaming our own vpnkit.exe into wsl-vpnkit.exe because Docker Desktop
+	# will also kill any vpnkit.exe processes!
+	# Note: Even if killing wsl-vpnkit.exe on host, if the existing wsl-vpnkit process was started
+	# from a wsl-vpnkit script in the same distro, then it will still fail with socat socket already
+	# exists etc! But sometimes it is just a stray vpnkit process, and then killing it automatically
+	# is convenient.
+	$VpnKitProcesses = Get-Process -Name 'wsl-vpnkit' -ErrorAction Ignore
 	if ($VpnKitProcesses) {
-		if (-not $DontStopExisting -and ($StopExisting -or $PSCmdlet.ShouldContinue("There are $($VpnKitProcesses.Count) vpnkit process(es) already running. You can only run one VPNKit service`nat a time, and if you want to start a different one you should manually stop the existing.`nIf you think it is just stray vpnkit processes then terminating them may is OK.`nDo you want to terminate existing vpnkit process(es)?`n$($VpnKitProcesses.Path -join '`n')", "Stop vpnkit.exe"))) {
+		if (-not $DontStopExisting -and ($StopExisting -or $PSCmdlet.ShouldContinue("There are $($VpnKitProcesses.Count) wsl-vpnkit process(es) already running. You can only run one VPNKit service`nat a time, and if you want to start a different one you should manually stop the existing.`nIf you think it is just stray wsl-vpnkit processes then terminating them may is OK.`nDo you want to terminate existing wsl-vpnkit process(es)?`n$($VpnKitProcesses.Path -join '`n')", "Stop wsl-vpnkit.exe"))) {
 			$VpnKitProcesses | Stop-Process -Force:$Force # If -Force then stop without prompting for confirmation (default is to prompt before stopping any process that is not owned by the current user)
 		}
 		# TODO: If deciding not to stop, just try anyway, with a probable error being the result, or should we abort?
