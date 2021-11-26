@@ -43,6 +43,8 @@ if ! sudo pacman --sync --refresh --sysupgrade --needed "$@" \
     pyside2 \
     `# Boost headers and libraries (includes dependency boost-libs which is also dependency of gcc via source-highlight)` \
     boost \
+    `# LevelDB headers and libraries (includes dependency snappy)` \
+    leveldb \
     `# Ninja build-system` \
     ninja \
     `# CMake build-system generator` \
