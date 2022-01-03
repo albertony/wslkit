@@ -580,6 +580,10 @@ on the host, and with some more detail:
     `VPNKIT_NPIPERELAY_PATH=/mnt/c/VPNKit/npiperelay.exe wsl-vpnkit`.
   - You can choose to keep it within the WSL filesystem instead of the host, if you want
     a more "self-contained" distro installation, not tied to a fixed location on host.
+    - The npiperelay readme warns that this is not possible, but that was most probably
+      written before [interop](https://docs.microsoft.com/en-us/windows/wsl/filesystems#run-windows-tools-from-linux)
+    functionality was added to WSL, because as long as the [interop setting](https://docs.microsoft.com/en-us/windows/wsl/wsl-config#interop-settings)
+    is not disabled it does really work!
   - If you put it in a location found from `$PATH` within WSL, e.g. `/usr/local/bin`,
     or create a symbolic link in such a location pointing to the real location, it being
     in WSL or even host's filesystem, you can run the script like this:
