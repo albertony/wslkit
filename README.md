@@ -136,7 +136,7 @@ from the Docker Desktop toolset. For background information, read the vpnkit doc
 The main difference from Docker's approach, is that instead of using Hyper-V sockets
 between the host and VM, we use regular Windows named pipes, with help of the
 [socat](https://linux.die.net/man/1/socat) utility in the WSL VM and the
-[npiperelay](https://github.com/jstarks/npiperelay) utility on the Windows host.
+[npiperelay](https://github.com/albertony/npiperelay) utility on the Windows host.
 
 The administration and execution of VPNKit is handled by a shell script [wsl-vpnkit](wsl-vpnkit/wsl-vpnkit),
 which is forked from [github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit).
@@ -570,7 +570,7 @@ on the host, and with some more detail:
   ```
   cp /mnt/c/bin/wsl-vpnkit /usr/local/bin
   ```
-- Download [npiperelay](https://github.com/jstarks/npiperelay), extract `npiperelay.exe`
+- Download [npiperelay](https://github.com/albertony/npiperelay), extract `npiperelay.exe`
   from the archive download, and copy it to a location reachable to the `wsl-vpnkit` script.
   - The script references it using variable `VPNKIT_NPIPERELAY_PATH`, with default
     value `/mnt/c/bin/npiperelay.exe`, so putting it in `C:\bin` on host will make the

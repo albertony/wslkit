@@ -1,6 +1,6 @@
 # wsl-vpnkit
 
-Uses [VPNKit](https://github.com/moby/vpnkit) and [npiperelay](https://github.com/jstarks/npiperelay) to provide network connectivity to the WSL 2 VM. This requires no settings changes or admin privileges on the Windows host.
+Uses [VPNKit](https://github.com/moby/vpnkit) and [npiperelay](https://github.com/albertony/npiperelay) to provide network connectivity to the WSL 2 VM. This requires no settings changes or admin privileges on the Windows host.
 
 ## Setup
 
@@ -30,10 +30,10 @@ sudo mv vpnkit-tap-vsockd /usr/local/sbin/vpnkit-tap-vsockd
 
 ### Install `npiperelay.exe`
 
-Download from [npiperelay](https://github.com/jstarks/npiperelay).
+Download from [npiperelay](https://github.com/albertony/npiperelay).
 
 ```sh
-wget https://github.com/jstarks/npiperelay/releases/latest/download/npiperelay_windows_amd64.zip
+wget https://github.com/albertony/npiperelay/releases/latest/download/npiperelay_windows_amd64.zip
 7z e npiperelay_windows_amd64.zip npiperelay.exe
 rm npiperelay_windows_amd64.zip
 

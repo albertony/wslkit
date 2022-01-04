@@ -41,7 +41,7 @@
 # - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/albertony/wslkit/wsl-vpnkit (fork of https://github.com/sakai135/wsl-vpnkit)
 # - wsl-vpnkit.exe (Windows executable) and vpnkit-tap-vsockd (Linux/WSL2 executable)
 #   from Docker Desktop for Windows: https://hub.docker.com/editions/community/docker-ce-desktop-windows/
-# - npiperelay.exe (Windows executable) from https://github.com/jstarks/npiperelay
+# - npiperelay.exe (Windows executable) from https://github.com/albertony/npiperelay
 # - resolv.conf and wsl.conf (Linux/WSL2 DNS configuration files) generated.
 # For updating, just run the command again, it will replace existing files.
 # There is no Uninstall command, but to uninstall just delete the program
@@ -2099,7 +2099,7 @@ function Stop-Wsl
 # - wsl-vpnkit (Linux/WSL2 shell script) from https://github.com/albertony/wslkit/wsl-vpnkit (fork of https://github.com/sakai135/wsl-vpnkit)
 # - wsl-vpnkit.exe (Windows executable) and vpnkit-tap-vsockd (Linux/WSL2 executable)
 #   from Docker Desktop for Windows: https://hub.docker.com/editions/community/docker-ce-desktop-windows/
-# - npiperelay.exe (Windows executable) from https://github.com/jstarks/npiperelay
+# - npiperelay.exe (Windows executable) from https://github.com/albertony/npiperelay
 # - wsl-vpnkit-install, wsl-vpnkit-uninstall, wsl-vpnkit-configure,
 #   wsl-vpnkit-unconfigure (Linux/WSL2 shell scripts) generated.
 # - resolv.conf and wsl.conf (Linux/WSL2 DNS configuration files) generated.
@@ -2164,7 +2164,7 @@ function New-VpnKit
 			if (-not $TempDirectory) { $TempDirectory = New-TempDirectory -Path $WorkingDirectory }
 			$DownloadName = 'Docker Desktop Installer.exe'
 			$DownloadFullName = Join-Path $TempDirectory $DownloadName
-			$DownloadUrl = "https://desktop.docker.com/win/stable/${DownloadName}"
+			$DownloadUrl = "https://desktop.docker.com/win/stable/${DownloadName}" # Redirects to "https://desktop.docker.com/win/main/amd64/Docker Desktop Installer.exe"
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
 			# Extract vpnkit.exe executable and docker-for-wsl.iso from installer into temp
@@ -2202,7 +2202,7 @@ function New-VpnKit
 			$DownloadName = 'npiperelay_windows_amd64.zip'
 			$DownloadFullName = Join-Path $TempDirectory $DownloadName
 			$GitHubApiHeaders = Get-GitHubApiAuthenticationHeaders -Credential $GitHubCredential
-			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/jstarks/npiperelay/releases/latest" -DisableKeepAlive -Headers $GitHubApiHeaders | Select-Object -ExpandProperty assets | Where-Object { $_.name -match $DownloadName } | Select-Object -First 1 | Select-Object -ExpandProperty browser_download_url
+			$DownloadUrl = Invoke-RestMethod -Uri "https://api.github.com/repos/albertony/npiperelay/releases/latest" -DisableKeepAlive -Headers $GitHubApiHeaders | Select-Object -ExpandProperty assets | Where-Object { $_.name -match $DownloadName } | Select-Object -First 1 | Select-Object -ExpandProperty browser_download_url
 			if (-not $DownloadUrl) { throw "Cannot find download URL for ${DownloadName}" }
 			Save-File -Url $DownloadUrl -Path $DownloadFullName -Credential $GitHubCredential
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
