@@ -15,7 +15,7 @@ sudo apt install p7zip-full
 ```
 
 ```sh
-wget https://desktop.docker.com/win/stable/amd64/67351/Docker%20Desktop%20Installer.exe
+wget https://desktop.docker.com/win/stable/Docker%20Desktop%20Installer.exe
 7z e Docker\ Desktop\ Installer.exe resources/vpnkit.exe resources/wsl/docker-for-wsl.iso
 7z e docker-for-wsl.iso containers/services/vpnkit-tap-vsockd/lower/sbin/vpnkit-tap-vsockd
 rm Docker\ Desktop\ Installer.exe docker-for-wsl.iso
@@ -33,7 +33,7 @@ sudo mv vpnkit-tap-vsockd /usr/local/sbin/vpnkit-tap-vsockd
 Download from [npiperelay](https://github.com/jstarks/npiperelay).
 
 ```sh
-wget https://github.com/jstarks/npiperelay/releases/download/v0.1.0/npiperelay_windows_amd64.zip
+wget https://github.com/jstarks/npiperelay/releases/latest/download/npiperelay_windows_amd64.zip
 7z e npiperelay_windows_amd64.zip npiperelay.exe
 rm npiperelay_windows_amd64.zip
 
