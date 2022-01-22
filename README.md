@@ -2,9 +2,9 @@
 
 This repository contains a toolkit for Windows Subsystem for Linux (WSL).
 
-TLDR: Go straight to [step by step guide](#usage-examples).
+*TLDR: Go straight to [usage examples](#usage-examples) for more of a step by step guide.*
 
-The main main part of the kit is the PowerShell script [Wsl.ps1](Wsl.ps1), which
+The main part of the kit is the PowerShell script [Wsl.ps1](Wsl.ps1), which
 is a generic utility script for installing and managing [WSL](https://docs.microsoft.com/en-us/windows/wsl/)
 distributions. Two of the [main features](#main-features) this provides,
 are custom installation of distros, which I have called [sideloading](#sideloading),
@@ -16,8 +16,8 @@ This project facilitates use of an alternative, third party, networking kit,
 called VPNKit. The core part of the VPNKit comes from the [github.com/moby/vpnkit](https://github.com/moby/vpnkit)
 project, and it is adapted to WSL using the method from the [github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit)
 project. The way it works is to intercept the ethernet traffic of the WSL2 virtual machine,
-and redirect it through a dedicated process pipe connection between the host and the
-virtual machine. More details [below](#vpnkit).
+and redirect it through a dedicated process pipe connection between the virtual machine
+and the host. More details [below](#vpnkit).
 
 In addition to the main features mentioned above, this repository also contains some
 convenience shell scripts that can be executed from within a newly created WSL distributions
@@ -38,11 +38,10 @@ to install WSL distros with `wsl --install` command, and in build 20211
 it can also list available images with `wsl --install --list-distributions`.
 To some degree this will overlap with the `New-Distro` and `Get-DistroImage` functions
 in my PowerShell script, although my variants will still be relevant as they 
-only imports the disk images without fully installing distros as Windows "apps",
-and also have additional support for installation of raw disk images,
-such as official linux releases, i.e. unofficial WSL distributions,
-such as the Arch Linux bootstrap distribution and the Alpine minimal
-root filesystem.
+only imports the disk images without fully installing distros as Windows "apps".
+Also they support not only installation of the official WSL distributions, but
+also raw disk images, which some official linux releases provides, e.g. the
+Arch Linux bootstrap distribution and the Alpine minimal root filesystem.
 
 ### Disclaimers
 
@@ -53,9 +52,9 @@ out of the previous rationale.
 
 I take no responsibility if anything bad happens if you decide to try it out.
 
-...however, I don't expect any problems, and I assume it could be usefull
-also for others, so please, just try it out, and also just report any issues you
-find so that I can make improvements.
+However, I don't expect any problems, and I assume it could be usefull
+also for others, so please: Just try it out. If you come across any issues,
+I would appreciate if you report them as issues, so that I can make improvements.
 
 ## Main features
 
@@ -68,9 +67,10 @@ The main PowerShell script provides general WSL administrative functions. Some o
 them are just convenience functions around standard `wsl.exe` functionality, but
 with more PowerShell-like syntax, including tab completion of parameters such as
 name of installed distribution. Others are accessing registry settings used by the
-WSL services. Example of such functions are changing which WSL distribution is default,
-changing the default user account, renaming or moving the disk image location
-of a [sideloaded](#sideloading) WSL distribution (see next section).
+WSL services, not exposed by the standard tools. Example of such functions are
+changing which WSL distribution is default, changing the default user account,
+renaming or moving the disk image location of a [sideloaded](#sideloading) WSL
+distribution (see next section).
 See complete [Wsl.ps1 function list](#wslps1-functions) below.
 
 ### Sideloading
@@ -110,11 +110,13 @@ latest version, import it into WSL, and do the basic configuration like
 creation of user etc. like with the officially WSL adapted images.
 See complete list of supported Linux distributions [below](#linux-distributions).
 
-Edit: Since this was written, Microsoft has written a short how-to guide covering
-this same approach: [Import any Linux distribution to use with WSL](https://docs.microsoft.com/en-us/windows/wsl/use-custom-distro).
+Edit: Since the above was written, Microsoft has published a short how-to guide
+covering this same approach:
+[Import any Linux distribution to use with WSL](https://docs.microsoft.com/en-us/windows/wsl/use-custom-distro).
 It mentions importing Alpine "minimal root filesystem", but main example it uses
 is CentOS by extracting the disk image from a docker container. So this is now
-an "officially approved" method for installing WSL distros!
+an "officially approved" method for installing WSL distros! My PowerShell
+script automates manual steps described.
 
 ### VPNKit
 
@@ -123,20 +125,26 @@ is the support for [VPNKit](https://github.com/moby/vpnkit). This is a set of
 tools providing customized, VPN/antivirus/firewall-friendly, network connectivity
 from a network device in the VM used to host WSL2 distros.
 
-The problem with the Hyper-V based networking that is default in WSL, is that
+The challenge with the Hyper-V based networking that is default in WSL, is that
 it can easily be problematic with VPN, and will be entirely blocked by some
 antivirus/firewall software etc. Read more [here](https://github.com/moby/vpnkit#why-is-this-needed).
 
-The mechanism used is to route network traffic from the distro, via a unix socket
-and a Windows named pipe, to a gateway process running on the host, into the host
-network device. Docker Desktop with WSL2 backend is using much of the same method,
-the core components used here, including the VPNKit executable, are actually taken
-from the Docker Desktop toolset. For background information, read the vpnkit documentation
+The mechanism used is to route network traffic from the distro into a virtual
+network interface in the vm, which is connected to a unix socket. A process
+in the vm (`socat`) connects the unix socket via a process pipeline to a process
+on the host (`npiperelay`), and this host process connects via a Windows named pipe
+to a gateway process (`vpnkit`). This relays the ethernet packages into the actual
+host network device.
+
+Docker Desktop with WSL2 backend is using much of the same method, the core components
+used here, including the VPNKit executable, are actually taken from the Docker Desktop
+toolset. For background information, read the vpnkit documentation
 [Plumbing inside Docker for Windows](https://github.com/moby/vpnkit/blob/master/docs/ethernet.md#plumbing-inside-docker-for-windows).
 The main difference from Docker's approach, is that instead of using Hyper-V sockets
-between the host and VM, we use regular Windows named pipes, with help of the
-[socat](https://linux.die.net/man/1/socat) utility in the WSL VM and the
-[npiperelay](https://github.com/albertony/npiperelay) utility on the Windows host.
+between the host and VM, we use more "native" approach with a process pipeline and
+a Windows named pipe, with help of additional components: The
+[socat](https://linux.die.net/man/1/socat) utility in the WSL VM, and
+the [npiperelay](https://github.com/albertony/npiperelay) utility on the Windows host.
 
 The administration and execution of VPNKit is handled by a shell script [wsl-vpnkit](wsl-vpnkit/wsl-vpnkit),
 which is forked from [github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit).
