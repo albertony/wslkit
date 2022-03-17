@@ -443,31 +443,6 @@ function Get-SevenZip
 }
 
 # .SYNOPSIS
-# Get names of installed distros, possibly filtered on only currently running ones.
-# .DESCRIPTION
-# This function executes `wsl.exe --list --quiet` in the background.
-# See also Get-DistroDistributionNam, which returns names retrieved from the registry
-# (should give same results).
-# .LINK
-# Get-DistroDistributionName
-# Test-Distro
-function Get-Distro([switch] $Running)
-{
-	if ($Running) {
-		wsl.exe --list --running --quiet | ForEach-Object { $_ -replace '\x00','' } | Where-Object { $_ } # Workaround for character encoding issues!
-	} else{
-		wsl.exe --list --quiet | ForEach-Object { $_ -replace '\x00','' } | Where-Object { $_ } # Workaround for character encoding issues!
-	}
-}
-
-# .SYNOPSIS
-# Utility function for checking if a distro with specified name exists, and optionally if also currently running.
-function Test-Distro([string] $Name, [switch] $Running)
-{
-	$Name -in @(Get-Distro -Running:$Running)
-}
-
-# .SYNOPSIS
 # Helper function for optionally specifying the distro options: --distribution and --user.
 function GetWslCommandDistroOptions([string] $Name, [string] $UserName)
 {
@@ -1920,6 +1895,31 @@ function Move-Distro
 }
 
 # .SYNOPSIS
+# Get names of installed distros, possibly filtered on only currently running ones.
+# .DESCRIPTION
+# This function executes `wsl.exe --list --quiet` in the background.
+# See also Get-DistroDistributionNam, which returns names retrieved from the registry
+# (should give same results).
+# .LINK
+# Get-DistroDistributionName
+# Test-Distro
+function Get-Distro([switch] $Running)
+{
+	if ($Running) {
+		wsl.exe --list --running --quiet | ForEach-Object { $_ -replace '\x00','' } | Where-Object { $_ } # Workaround for character encoding issues!
+	} else{
+		wsl.exe --list --quiet | ForEach-Object { $_ -replace '\x00','' } | Where-Object { $_ } # Workaround for character encoding issues!
+	}
+}
+
+# .SYNOPSIS
+# Utility function for checking if a distro with specified name exists, and optionally if also currently running.
+function Test-Distro([string] $Name, [switch] $Running)
+{
+	$Name -in @(Get-Distro -Running:$Running)
+}
+
+# .SYNOPSIS
 # Start a distro instance, typically a new shell session.
 # .DESCRIPTION
 # This is the same as executing `wsl.exe` targeted at a specific distro. Adds argument
@@ -1928,6 +1928,8 @@ function Move-Distro
 # optionally start it in a new window instead. Can also execute commands directly,
 # insted of entering a shell session.
 # .LINK
+# Test-Distro
+# Stop-Distro
 # Start-VpnKit
 function Start-Distro
 {
@@ -2014,6 +2016,8 @@ function Start-Distro
 # stops all running distributions, but also shuts down the entire virtual
 # machine which the distributions run in (same as calling Stop-Wsl).
 # .LINK
+# Test-Distro
+# Start-Distro
 # Stop-Wsl
 function Stop-Distro
 {
@@ -2044,12 +2048,33 @@ function Stop-Distro
 }
 
 # .SYNOPSIS
+# Test if WSL is running.
+# .DESCRIPTION
+# This will check for any running instances of the "Microsoft Windows Subsystem for Linux Background Host"
+# process. Checking that process name, description and image path matches the WSL defaults.
+# This process will be automatically started by the "Microsoft Windows Subsystem for Linux Launcher"
+# application (wsl.exe) or the "LXSS Manager Service" (LxssManager) when needed, e.g. when starting
+# a distro (see Start-Distro), and stopped automatically or as a result of command "wsl.exe --shutdown"
+# as done by Stop-Wsl.
+# .LINK
+# Stop-Wsl
+function Test-Wsl
+{
+	0 -lt (Get-Process -ProcessName wslhost -ErrorAction Ignore |
+		Where-Object -Property Path -EQ (Join-Path -Path $Env:SystemRoot -ChildPath System32\lxss\wslhost.exe) |
+		Where-Object -Property Description -EQ "Microsoft Windows Subsystem for Linux Background Host").Count
+}
+
+# .SYNOPSIS
 # Stop the WSL.
 # .DESCRIPTION
 # This will perform `wsl.exe --shutdown` to stop stop all running distributions,
 # as well as the entire virtual machine which the distributions run in.
 # Same as calling `Stop-Distro -All`.
+# There is no "Start-Wsl" function, as the virtual machine is automatically started
+# (if not already running) whenever a distro is started (i.e. function "Start-Distro").
 # .LINK
+# Test-Wsl
 # Stop-Distro
 function Stop-Wsl
 {
