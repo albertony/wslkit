@@ -1187,6 +1187,16 @@ function IsDistroItemPackageInstalled($Item)
 function Get-DistroImage
 {
 	# Get Microsoft direct download links
+	Invoke-RestMethod -Uri https://raw.githubusercontent.com/microsoft/WSL/master/distributions/DistributionInfo.json -DisableKeepAlive | Select-Object -ExpandProperty Distributions | Where-Object -Property Amd64 -EQ $true | ForEach-Object {
+		[PSCustomObject]@{
+			Id = $_.Name
+			Name = $_.FriendlyName
+			Microsoft = $true
+			Url = $_.Amd64PackageUrl
+		}
+	}
+	# OLD: Scrape from web
+	<#
 	$Links = Invoke-WebRequest -Uri 'https://docs.microsoft.com/en-us/windows/wsl/install-manual' -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Where-Object { $_.'data-linktype' -eq 'external' } | Select-Object -ExpandProperty href
 	# Get urls with hostname aka.ms.
 	# In article updated 09/15/2020 these are:
@@ -1201,20 +1211,21 @@ function Get-DistroImage
 	$DistroImages = @($Links | Where-Object { $_.StartsWith('https://aka.ms/') -and -not $_.EndsWith('arm') } | ForEach-Object {
 		$id = $_ -replace '^.*/(?:wsl-?)?([^/]*)$','$1'
 		[PSCustomObject]@{
-			Url = $_ # The URL to be used for downloading.
 			Id = $Id # A unique id to be used in for selecting distro image in this script.
+			Url = $_ # The URL to be used for downloading.
 		}
 	})
 	# Get urls with hostname github.com.
 	# In article updated 09/15/2020 this is only "Fedora Remix for WSL", but it has only an ARM version which is free.
 	#$DistroImages += @($Links | Where-Object { $_ -match 'https://github.com/([^/]*)/(?:wsl-?)?([^/]*)/releases/?' } | ForEach-Object {
 	#	[PSCustomObject]@{
-	#		Url = $_
 	#		Id = $Matches[2]
+	#		Url = $_
 	#	}
 	#})
 	# Other "unofficial" versions:
 	#   ArchWSL (https://github.com/yuk7/ArchWSL/releases)
+	#>
 	
 	# Alpine official "Minimal root filesystem" distribution, latest version.
 	# There is also an unofficial Alpine WSL that is officially endorsed by the Alpine project (https://gitlab.alpinelinux.org/alpine/aports/-/issues/9408),
@@ -1225,8 +1236,10 @@ function Get-DistroImage
 		$Checksum = Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}.sha512" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		$DistroImages += @(
 			[PSCustomObject]@{
-				Url = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}"
 				Id = 'alpine-minirootfs'
+				Name = 'Alpine Minimal Root Filesystem'
+				Microsoft = $false
+				Url = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}"
 				Checksum = [PSCustomObject]@{
 					Algorithm = "SHA512"
 					Value = $Checksum
@@ -1244,8 +1257,10 @@ function Get-DistroImage
 		$Checksum = Invoke-WebRequest -Uri "https://archive.archlinux.org/iso/${ReleaseFolder}sha1sums.txt" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "(?m)^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		$DistroImages += @(
 			[PSCustomObject]@{
-				Url = "https://archive.archlinux.org/iso/${ReleaseFolder}${ArchiveName}"
 				Id = 'archlinux-bootstrap'
+				Name = 'Arch Bootstrap'
+				Microsoft = $false
+				Url = "https://archive.archlinux.org/iso/${ReleaseFolder}${ArchiveName}"
 				Checksum = [PSCustomObject]@{
 					Algorithm = "SHA1"
 					Value = $Checksum
@@ -1264,8 +1279,8 @@ function Get-DistroImage
 	#		(Invoke-RestMethod -Uri $_ -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object { $_.type -eq "file" -and $_.name -match '(fedora-.*)[.-].*-x86_64.tar.xz' } | ForEach-Object {
 	#			$DistroImages += @(
 	#				[PSCustomObject]@{
-	#					Url = $_.download_url
 	#					Id = $Matches[1].ToLower()
+	#					Url = $_.download_url
 	#					#TODO: No checksum available?
 	#				}
 	#			)
@@ -1282,7 +1297,7 @@ function Get-DistroImage
 			BaseUrl = "${BaseUrl}development/"
 		}
 	)
-	$Versions += (Invoke-WebRequest -Uri "${BaseUrl}releases/").Links.href | Where-Object { $_ -match '^(\d+)/' } | ForEach-Object { [int] $Matches[1] } | Sort-Object -Descending | Select-Object -First 2 | ForEach-Object {
+	$Versions += (Invoke-WebRequest -Uri "${BaseUrl}releases/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match '^(\d+)/' } | ForEach-Object { [int] $Matches[1] } | Sort-Object -Descending | Select-Object -First 2 | ForEach-Object {
 		@{
 			MajorVersion = $_
 			BaseUrl = "${BaseUrl}releases/"
@@ -1291,13 +1306,15 @@ function Get-DistroImage
 	$Versions | ForEach-Object {
 		$MajorVersion = $_.MajorVersion
 		$BaseUrl = "$($_.BaseUrl)$(`"$($_.MajorVersion)`".ToLower())/"
-		$ChecksumFile = (Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/").Links.href | Select-String -Pattern "^Fedora-Container-.*-CHECKSUM$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
-		(Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/").Links.href | Where-Object { $_ -match "^(Fedora-Container-(?:Minimal-)?Base-${MajorVersion})-.*\.x86_64\.tar.xz$" } | ForEach-Object {
-			$Checksum = (Invoke-RestMethod -Uri "${BaseUrl}Container/x86_64/images/${ChecksumFile}") | Select-String -Pattern "(?m)^(.*)\s+\($($_.Replace(".","\."))\)\s+=\s+(.*)$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups
+		$ChecksumFile = (Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/" -UseBasicParsing -DisableKeepAlive).Links.href | Select-String -Pattern "^Fedora-Container-.*-CHECKSUM$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
+		(Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match "^(Fedora-Container-(?:Minimal-)?Base-${MajorVersion})-.*\.x86_64\.tar.xz$" } | ForEach-Object {
+			$Checksum = (Invoke-RestMethod -Uri "${BaseUrl}Container/x86_64/images/${ChecksumFile}" -DisableKeepAlive) | Select-String -Pattern "(?m)^(.*)\s+\($($_.Replace(".","\."))\)\s+=\s+(.*)$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups
 			$DistroImages += @(
 				[PSCustomObject]@{
-					Url = "${BaseUrl}Container/x86_64/images/${_}"
 					Id = $Matches[1].ToLower()
+					Name = $Matches[1]
+					Microsoft = $false
+					Url = "${BaseUrl}Container/x86_64/images/${_}"
 					Checksum = [PSCustomObject]@{
 						Algorithm = $Checksum[1].Value
 						Value = $Checksum[2].Value
@@ -1489,7 +1506,7 @@ function New-Distro
 				}
 				Write-Verbose "$($DistroImage.Checksum.Algorithm) checksum match"
 			}
-			if ($DownloadFullName.EndsWith(".AppxBundle")) {
+			if ($DownloadFullName -like '*.AppxBundle') {
 				# Extract appx installer from AppxBundle, then fake that as the downloaded file and continue with extracting it
 				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
 				if (-not $SevenZipPath) {
@@ -1503,7 +1520,7 @@ function New-Distro
 				if (-not $DownloadFullName) { throw "Cannot find extracted DistroLauncher-Appx_*_x64.appx" }
 				# Continue with .appx extraction
 			}
-			if ($DownloadFullName.EndsWith(".appx")) {
+			if ($DownloadFullName -like "*.appx") {
 				# Extract installer archive from appx installer (requires 7-Zip)
 				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
 				if (-not $SevenZipPath) {
@@ -1570,6 +1587,7 @@ function New-Distro
 				# Import archive to WSL
 				Write-Host "Creating WSL distro '${Name}'..."
 				Write-Verbose "Importing from archive ${FileSystemArchiveFullName}"
+				#Write-Verbose "wsl.exe --import ${Name} ${Destination} ${FileSystemArchiveFullName}"
 				#$Destination = Get-Directory -Path $Destination -Create
 				wsl.exe --import $Name $Destination $FileSystemArchiveFullName
 				Remove-Item -LiteralPath $FileSystemArchiveFullName
