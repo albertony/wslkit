@@ -28,7 +28,7 @@ find /usr/share/i18n/locales -mindepth 1 -maxdepth 1 -type f -not -name 'i18n*' 
 find /usr/share/i18n/charmaps -mindepth 1 -maxdepth 1 -type f -not -name UTF-8.gz -delete
 # Documentation
 rm -r /usr/share/doc/* /usr/share/info/* /usr/share/gtk-doc/html/* /usr/share/man/* > /dev/null 2>&1
-rm /README
+rm /README > /dev/null 2>&1
 
 # Make sure file /etc/pacman.d/noextract is generated with NoExtract options preventing reinstall removed files
 if [ -f "/etc/pacman.d/noextract" ]; then
