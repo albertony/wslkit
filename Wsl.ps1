@@ -461,7 +461,7 @@ function GetWslCommandDistroOptions([string] $Name, [string] $UserName)
 # Helper function to get argument completion.
 # .DESCRIPTION
 # Enable for a parameter accepting name of distro by prepending with:
-# [ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+# [ArgumentCompleter({CompleteDistroName @args})]
 # .LINK
 # ValidateDistroName
 function CompleteDistroName
@@ -575,7 +575,7 @@ function Set-DefaultDistro
 	(
 		# Name of distro. Required, cannot assume WSL default in this case!
 		[Parameter(Mandatory)]
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name
@@ -610,7 +610,7 @@ function Get-DistroDistributionName
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -639,7 +639,7 @@ function Set-DistroDistributionName
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -662,7 +662,7 @@ function Get-DistroPackageName
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -681,7 +681,7 @@ function Get-DistroPath
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -709,7 +709,7 @@ function Set-DistroPath
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -740,7 +740,7 @@ function Get-DistroDefaultUserId
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -765,7 +765,7 @@ function Set-DistroDefaultUserId
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -788,7 +788,7 @@ function Get-DistroFileSystemVersion
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -857,7 +857,7 @@ function Get-DistroFlags
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -886,7 +886,7 @@ function Set-DistroFlags
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -926,7 +926,7 @@ function Get-DistroInterop
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -973,7 +973,7 @@ function Set-DistroInterop
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -1021,7 +1021,7 @@ function Get-DistroAutoMount
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -1057,7 +1057,7 @@ function Set-DistroAutoMount
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -1086,7 +1086,7 @@ function Get-DistroVersion
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -1112,7 +1112,7 @@ function Get-DistroState
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -1178,14 +1178,28 @@ function IsDistroItemPackageInstalled($Item)
 # .SYNOPSIS
 # Get identifier and download url for supported WSL distro images.
 # .DESCRIPTION
-# Some are from the "official" list, or at least endorsed by Microsoft, with
-# direct download link on the following page: https://docs.microsoft.com/en-us/windows/wsl/install-manual.
-# (but there are more distros available in Microsoft Store and also GitHub etc
-# which are not supported).
-# In addition some non-Microsoft endorsed distros are supported: Currently
-# Alpine and Arch, both from official root filesystem images.
+# Some are from the official list endorsed by Microsoft, same as
+# listed by newer versions of WSL with command "wsl --list --online". 
+# (there are also manual download links on the following page:
+# https://docs.microsoft.com/en-us/windows/wsl/install-manual).
+# In addition some distros that are not Microsoft-endorsed are supported;
+# currently Alpine, Arch (both from official root filesystem images)
+# and Fedora (from official container image).
+#
+# The returned list is cached, because it is generated from different
+# web requests that take time and that may be rate limited. Use option
+# Force to run all requests and rebuild the list.
 function Get-DistroImage
 {
+	param([switch] $Force)
+
+	if (-not $Force -and $Script:DistroImages) {
+		$Script:DistroImages
+		return
+	}
+
+	$Script:DistroImages = @()
+
 	# Get Microsoft direct download links
 	Invoke-RestMethod -Uri https://raw.githubusercontent.com/microsoft/WSL/master/distributions/DistributionInfo.json -DisableKeepAlive | Select-Object -ExpandProperty Distributions | Where-Object -Property Amd64 -EQ $true | ForEach-Object {
 		[PSCustomObject]@{
@@ -1208,7 +1222,7 @@ function Get-DistroImage
 	#   OpenSUSE Leap 42
 	#   SUSE Linux Enterprise Server 12.
 	# (not including ARM versions of Ubuntu 20.04 and 18.04).
-	$DistroImages = @($Links | Where-Object { $_.StartsWith('https://aka.ms/') -and -not $_.EndsWith('arm') } | ForEach-Object {
+	$Script:DistroImages = @($Links | Where-Object { $_.StartsWith('https://aka.ms/') -and -not $_.EndsWith('arm') } | ForEach-Object {
 		$id = $_ -replace '^.*/(?:wsl-?)?([^/]*)$','$1'
 		[PSCustomObject]@{
 			Id = $Id # A unique id to be used in for selecting distro image in this script.
@@ -1217,7 +1231,7 @@ function Get-DistroImage
 	})
 	# Get urls with hostname github.com.
 	# In article updated 09/15/2020 this is only "Fedora Remix for WSL", but it has only an ARM version which is free.
-	#$DistroImages += @($Links | Where-Object { $_ -match 'https://github.com/([^/]*)/(?:wsl-?)?([^/]*)/releases/?' } | ForEach-Object {
+	#$Script:DistroImages += @($Links | Where-Object { $_ -match 'https://github.com/([^/]*)/(?:wsl-?)?([^/]*)/releases/?' } | ForEach-Object {
 	#	[PSCustomObject]@{
 	#		Id = $Matches[2]
 	#		Url = $_
@@ -1234,7 +1248,7 @@ function Get-DistroImage
 	$ArchiveName = Invoke-WebRequest -Uri 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/latest-releases.yaml' -UseBasicParsing -DisableKeepAlive | Select-String -Pattern 'alpine-minirootfs-(.*)-x86_64.tar.gz' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
 	if ($ArchiveName) {
 		$Checksum = Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}.sha512" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
-		$DistroImages += @(
+		$Script:DistroImages += @(
 			[PSCustomObject]@{
 				Id = 'alpine-minirootfs'
 				Name = 'Alpine Minimal Root Filesystem'
@@ -1255,7 +1269,7 @@ function Get-DistroImage
 	$ArchiveName = "archlinux-bootstrap-$($ReleaseFolder.TrimEnd('/'))-x86_64.tar.gz"
 	if ($ReleaseFolder) {
 		$Checksum = Invoke-WebRequest -Uri "https://archive.archlinux.org/iso/${ReleaseFolder}sha1sums.txt" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "(?m)^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
-		$DistroImages += @(
+		$Script:DistroImages += @(
 			[PSCustomObject]@{
 				Id = 'archlinux-bootstrap'
 				Name = 'Arch Bootstrap'
@@ -1277,7 +1291,7 @@ function Get-DistroImage
 	#(Invoke-RestMethod -Uri "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/branches" -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object -Property name -NE "master" | Sort-Object -Property name -Descending | Select-Object -First 3 | ForEach-Object {
 	#	(Invoke-RestMethod -Uri "https://api.github.com/repos/fedora-cloud/docker-brew-fedora/contents?ref=$($_.name)" -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object { $_.type -eq "dir" -and $_.name -eq "x86_64" } | Select-Object -ExpandProperty url -First 1 | ForEach-Object {
 	#		(Invoke-RestMethod -Uri $_ -DisableKeepAlive -Headers $GitHubApiHeaders) | Where-Object { $_.type -eq "file" -and $_.name -match '(fedora-.*)[.-].*-x86_64.tar.xz' } | ForEach-Object {
-	#			$DistroImages += @(
+	#			$Script:DistroImages += @(
 	#				[PSCustomObject]@{
 	#					Id = $Matches[1].ToLower()
 	#					Url = $_.download_url
@@ -1309,7 +1323,7 @@ function Get-DistroImage
 		$ChecksumFile = (Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/" -UseBasicParsing -DisableKeepAlive).Links.href | Select-String -Pattern "^Fedora-Container-.*-CHECKSUM$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
 		(Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match "^(Fedora-Container-(?:Minimal-)?Base-${MajorVersion})-.*\.x86_64\.tar.xz$" } | ForEach-Object {
 			$Checksum = (Invoke-RestMethod -Uri "${BaseUrl}Container/x86_64/images/${ChecksumFile}" -DisableKeepAlive) | Select-String -Pattern "(?m)^(.*)\s+\($($_.Replace(".","\."))\)\s+=\s+(.*)$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups
-			$DistroImages += @(
+			$Script:DistroImages += @(
 				[PSCustomObject]@{
 					Id = $Matches[1].ToLower()
 					Name = $Matches[1]
@@ -1324,7 +1338,7 @@ function Get-DistroImage
 		}
 	}
 
-	$DistroImages
+	$Script:DistroImages
 }
 
 # .SYNOPSIS
@@ -1768,7 +1782,7 @@ function Remove-Distro
 	(
 		# Name of distro. Required, do not want to automatically remove default distro without user explicitely specifying it!
 		[Parameter(Mandatory)]
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -1822,7 +1836,7 @@ function Rename-Distro
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[string] $Name,
 
@@ -1869,7 +1883,7 @@ function Move-Distro
 	param
 	(
 		[Parameter(Mandatory=$false)] # Will use registered default distro if not specified
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[string] $Name,
 
@@ -1956,7 +1970,7 @@ function Start-Distro
 	(
 		# Optional name of distro. If not specified WSL default will be assumed.
 		[Parameter(Mandatory=$false)]
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -2044,7 +2058,7 @@ function Stop-Distro
 	(
 		# Optional name of distro. If not specified WSL default will be assumed.
 		[Parameter(Mandatory=$false)]
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -2571,7 +2585,7 @@ function Install-VpnKit
 	(
 		# Optional name of distro. If not specified WSL default will be assumed.
 		[Parameter(Mandatory=$false)]
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -3001,7 +3015,7 @@ function Uninstall-VpnKit
 	(
 		# Optional name of distro. If not specified WSL default will be assumed.
 		[Parameter(Mandatory=$false)]
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
@@ -3099,7 +3113,7 @@ function Start-VpnKit
 	(
 		# Optional name of distro. If not specified WSL default will be assumed.
 		[Parameter(Mandatory=$false)]
-		[ArgumentCompleter({param($Command, $Parameter, $WordToComplete, $CommandAst, $FakeBoundParams) CompleteDistroName -WordToComplete $WordToComplete})]
+		[ArgumentCompleter({CompleteDistroName @args})]
 		[ValidateNotNullOrEmpty()] [ValidateScript({ValidateDistroName $_})]
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
