@@ -32,7 +32,10 @@ else
 fi
 
 if [ ! "$SSH_AUTH_SOCK" ] || [ $agent_run_state = 2 ]; then
+    echo "Starting authentication agent"
     eval $(umask 077; ssh-agent -s) && agent_run_state=1
+else
+    echo "Authentication agent already running"
 fi
 
 if [ $agent_run_state -lt 2 ]; then
@@ -50,7 +53,10 @@ if [ $agent_run_state -lt 2 ]; then
             if ssh-add -L | ssh-keygen -E sha256 -lf /proc/self/fd/0 | grep -q $(ssh-keygen -lf $identity_file -E sha256 | grep -o 'SHA256.\{43\}'); then
                 echo "Identity exists: $identity_file"
             else
-                ssh-add -t 4h $identity_file
+                echo "Adding SSH identity to the authentication agent"
+                if ! ssh-add -t 4h $identity_file; then
+                    echo "Failed!"
+                fi
             fi
         fi
     done
