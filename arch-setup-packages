@@ -19,10 +19,43 @@ if [ ${EUID:-$(id -u)} -ne 0 ]; then
 fi
 
 #
-# Force update the package database and upgrade/downgrade any modified packages.
+# Force update the package database.
 #
 echo
-echo "Forcing update of package database and performing full upgrade/downgrade of packages..."
+echo "Forcing update of package database..."
+if ! pacman --sync --refresh --refresh "$@"; then
+    echo "Failed!"
+    exit 1
+fi
+
+#
+# Ensure keyring contains the latest official set of packager keys.
+#
+# This needs to be done before upgrade of other packages to avoid potential issues
+# with "unknown trust" or "marginal trust" of signatures on other packages to be
+# upgraded in the same operation.
+#
+# The package archlinux-keyring contains the official set of keys. Assuming
+# it is preinstalled: Newer versions of Arch comes with the "base" meta package
+# preinstalled, and newer versions of that includes the archlinux-keyring package.
+# Previously the archlinux-keyring package would be implicitely included as pacman
+# version 6.0.1-5 and older had a dependency to it, but pacman version 6.0.1-6
+# removed the dependency to archlinux-keyring, and archlinux-keyring version
+# 20220713-2 added dependency to pacman instead, and then base version 3-1 was
+# extended to include archlinux-keyring in addition to pacman.
+#
+echo
+echo "Ensuring latest keyring package is installed..."
+if ! pacman --sync --needed "$@" archlinux-keyring; then
+    echo "Failed!"
+    exit 1
+fi
+
+#
+# Force upgrade/downgrade any modified packages.
+#
+echo
+echo "Performing full upgrade/downgrade of packages..."
 if ! pacman --sync --refresh --refresh --sysupgrade --sysupgrade "$@"; then
     echo "Failed!"
     exit 1
