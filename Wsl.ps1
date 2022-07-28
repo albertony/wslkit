@@ -1603,6 +1603,8 @@ function New-Distro
 				Write-Verbose "Importing from archive ${FileSystemArchiveFullName}"
 				#Write-Verbose "wsl.exe --import ${Name} ${Destination} ${FileSystemArchiveFullName}"
 				#$Destination = Get-Directory -Path $Destination -Create
+				# TODO: The following import command fails with "The system cannot find the path specified."
+				#       if the parent of $Destination does not exist.
 				wsl.exe --import $Name $Destination $FileSystemArchiveFullName
 				Remove-Item -LiteralPath $FileSystemArchiveFullName
 				if ($LastExitCode -ne 0) {
@@ -2829,11 +2831,14 @@ function Install-VpnKit
 				}
 			} elseif ($DistroInfo.Id -eq 'arch') {
 				# Arch is missing socat, and also iproute2, as well as sed and grep required by the shell scripts.
+				# TODO: Newer versions of arch bootstrap image includes iproute2, sed and grep via the "base" meta package,
+				# which means we can now assume they are present!? Or if not, or maybe better alternative anyway,
+				# perhaps check if installed (any version) and only download and install from file if not (no version) installed!?
 				$SocatStatus = wsl.exe @WslOptions pacman --query socat 2>&1
 				if ($LastExitCode -eq 0) {
 					Write-Verbose "Skipping installation of package 'socat' because it is already present: ${SocatStatus}"
 				} else {
-					$DownloadMirror = 'http://mirror.terrahost.no/linux/archlinux' # Note: Hard coded mirror url!
+					$DownloadMirror = 'https://mirror.neuf.no/archlinux' # Note: Hard coded mirror url!
 					$WorkingDirectory = Get-Directory -Path $WorkingDirectory -Create
 					$TempDirectory = New-TempDirectory -Path $WorkingDirectory
 					try
@@ -2866,7 +2871,7 @@ function Install-VpnKit
 							$TempDirectoryRoot = [System.IO.Path]::GetPathRoot($TempDirectory)
 							$TempDirectoryWslMount = "/mnt/$($TempDirectory.Replace($TempDirectoryRoot, $TempDirectoryRoot.ToLower().Replace(':','')).Replace('\','/'))"
 							Write-Host "Installing packages '$($Packages.Name -join `"', '`")'..."
-							$Commands = 'pacman', '--upgrade', '--noconfirm'
+							$Commands = 'pacman', '--upgrade', '--needed', '--noconfirm'
 							foreach($PackageDownloadName in $PackageDownloadNames) {
 								$Commands += "${TempDirectoryWslMount}/${PackageDownloadName}"
 							}

@@ -61,14 +61,28 @@ fi
 #
 # Install some basic utilities.
 #
-# Arch linux contains almost none except the most necessary system tools required for
-# system startup, but the bootstrap archive as of 2021.02.01 includes at least: pacman,
-# pacman-mirrorlist, ca-certificates, bash, openssl, curl, gawk, bzip2, xz and zlib.
+# Arch linux contains basically only the most necessary system tools required for
+# system startup, but the newer versions of the bootstrap archive (tested
+# 2022.07.01) comes with the meta package "base" preinstalled. It includes some
+# additional system tools that are highly relevant base utilities in any
+# installation, and typically assumed to be part of any Arch installation.
+# Therefore we can assume packages such as the following are already installed:
+# shadow, systemd, pacman, pacman-mirrorlist, archlinux-keyring, ca-certificates,
+# bash, sed, grep, gawk, tar, gzip, bzip2, xz, zlib, openssl, curl, iputils,
+# iproute2, procps-ng.
 #
-# There is a group package "base" in the standard core repo, which includes a highly
-# relevant base utilities in any installation, such as tar, gzip, sed, shadow, systemd,
-# grep, iputils (with ping command), procps-ng (with ps command) etc. (some overlap with
-# preinstalled). Currently not installing this, but only the individual packages found
+# Here we install some additional tools which cannot be assumed to be included
+# in a clean minimal installation, such as sudo, unzip, wget, nano.
+#
+# Previously the bootstrap archive did not include the "base" package, e.g.
+# version 2021.02.01 included: pacman, pacman-mirrorlist, ca-certificates, bash,
+# openssl, curl, gawk, bzip2, xz and zlib, but it did not include sudo, sed, grep,
+# tar, gzip, unzip, wget, nano, iputils, iproute2, procps-ng. Also the "base" was
+# previously a package group and not a meta package, and it included more packages.
+# The base package group could then be installed to get tar, gzip, sed, shadow,
+# systemd, grep, iputils (with ping command), procps-ng (with ps command) etc.
+# (some overlap with preinstalled). To leave a slimmer installation this script
+# did not install the base package, but only some of the individual packages found
 # to be needed.
 #
 # NOTE: Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
@@ -79,17 +93,19 @@ fi
 echo
 echo "Installing basic packages..."
 if ! pacman --sync --needed "$@" \
-    sudo \
+    `# Packages included in meta package "base" which is preinstalled on newer bootstrap images (TODO: Remove)` \
     sed \
     grep \
     tar \
     gzip \
-    unzip \
-    wget \
-    nano \
     iputils \
     iproute2 \
-    procps-ng
+    procps-ng \
+    `# Packages not preinstalled` \
+    sudo \
+    unzip \
+    wget \
+    nano
 then
     echo "Failed!"
     exit 1

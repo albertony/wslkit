@@ -78,7 +78,7 @@ pacman-key --init
 pacman-key --populate archlinux >/dev/null
 
 # Configure package repository mirror
-if [ "$(tail --lines=1 /etc/pacman.d/mirrorlist 2>/dev/null)" == "Server = http://mirror.terrahost.no/linux/archlinux/\$repo/os/\$arch" ]; then
+if [ "$(tail --lines=1 /etc/pacman.d/mirrorlist 2>/dev/null)" == "Server = https://mirror.neuf.no/archlinux/\$repo/os/\$arch" ]; then
     echo "Package repository mirror already in mirrorlist";
 else
     if [ -e "/etc/pacman.d/mirrorlist" ]; then
@@ -88,5 +88,5 @@ else
     fi
     echo "Writing package repository mirror to new mirrorlist file"
     #echo "Server = http://mirror.rackspace.com/archlinux/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
-    echo "Server = http://mirror.terrahost.no/linux/archlinux/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+    echo "Server = https://mirror.neuf.no/archlinux/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
 fi
