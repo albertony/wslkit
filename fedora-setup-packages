@@ -41,6 +41,28 @@ if ! $dnf --nodocs --refresh update; then
     exit 1
 fi
 
+# The tzdata package is already installed, as dependency to glibc,
+# but the minimal base image have removed all zoneinfo files and
+# forced UTC as timezone.
+# WSL automatically sets the timezone of the distro, it creates the /etc/localtime
+# symlink to the proper file under /usr/share/zoneinfo matching the configured
+# timezone in Windows. To ensure this works as intended, we reinstall the tzdata
+# package if zoneinfo files are still missing - if the upgrade command above
+# found and installed a new version of tzdata then it will already have
+# installed zoneinfo files and reinstall will not be necessary after all.
+echo
+echo "Checking timezone database..."
+if ! rpm --verify tzdata > /dev/null; then
+#if [ ! -e /usr/share/zoneinfo ]; then
+    echo "Reinstalling timezone database to get missing zoneinfo files"
+    if ! $dnf --nodocs --reinstall tzdata; then
+        echo "Failed!"
+        exit 1
+    fi
+else
+    echo "Timezone database exists"
+fi
+
 echo
 echo "Installing basic packages..."
 if ! $dnf --nodocs install \
