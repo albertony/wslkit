@@ -75,10 +75,10 @@ if [ -e /etc/pacman.d/gnupg ]; then
     rm -rf /etc/pacman.d/gnupg
 fi
 pacman-key --init
-pacman-key --populate archlinux >/dev/null
+pacman-key --populate > /dev/null
 
 # Configure package repository mirror
-if [ "$(tail --lines=1 /etc/pacman.d/mirrorlist 2>/dev/null)" == "Server = https://mirror.neuf.no/archlinux/\$repo/os/\$arch" ]; then
+if [ "$(tail --lines=1 /etc/pacman.d/mirrorlist 2> /dev/null)" == "Server = https://mirror.neuf.no/archlinux/\$repo/os/\$arch" ]; then
     echo "Package repository mirror already in mirrorlist";
 else
     if [ -e "/etc/pacman.d/mirrorlist" ]; then
