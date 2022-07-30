@@ -1201,7 +1201,7 @@ function Get-DistroImage
 	$Script:DistroImages = @()
 
 	# Get Microsoft direct download links
-	Invoke-RestMethod -Uri https://raw.githubusercontent.com/microsoft/WSL/master/distributions/DistributionInfo.json -DisableKeepAlive | Select-Object -ExpandProperty Distributions | Where-Object -Property Amd64 -EQ $true | ForEach-Object {
+	$Script:DistroImages += Invoke-RestMethod -Uri https://raw.githubusercontent.com/microsoft/WSL/master/distributions/DistributionInfo.json -DisableKeepAlive | Select-Object -ExpandProperty Distributions | Where-Object -Property Amd64 -EQ $true | ForEach-Object {
 		[PSCustomObject]@{
 			Id = $_.Name
 			Name = $_.FriendlyName
@@ -1222,7 +1222,7 @@ function Get-DistroImage
 	#   OpenSUSE Leap 42
 	#   SUSE Linux Enterprise Server 12.
 	# (not including ARM versions of Ubuntu 20.04 and 18.04).
-	$Script:DistroImages = @($Links | Where-Object { $_.StartsWith('https://aka.ms/') -and -not $_.EndsWith('arm') } | ForEach-Object {
+	$Script:DistroImages += @($Links | Where-Object { $_.StartsWith('https://aka.ms/') -and -not $_.EndsWith('arm') } | ForEach-Object {
 		$id = $_ -replace '^.*/(?:wsl-?)?([^/]*)$','$1'
 		[PSCustomObject]@{
 			Id = $Id # A unique id to be used in for selecting distro image in this script.
