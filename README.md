@@ -436,7 +436,9 @@ the `Wsl.ps1` script:
   - Downloads a specified distro image, specified with parameter `-Image` (see `Get-DistroImage`),
     extracts the file system archive from it and imports it into WSL by executing `wsl.exe --import`.
   - Optionally creates a user account within the distro to use as default instead
-    of the built-in root account (parameter `-UserName`).
+    of the built-in root account (parameter `-User`). Alternatively you can always
+    choose to create a user manually later from within the distro, and
+    use `Set-DistroDefaultUserId` to set it as default user for wsl to use.
 - Start-Distro
   - Basically just executes `wsl.exe` to enter an interactive shell session,
     but with options such as distro name (with autocompletion),
