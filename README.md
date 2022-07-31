@@ -26,9 +26,9 @@ packages etc.
 
 ### Windows version
 
-Currently this project has been created to work with Windows 10 version 1909 (build 18363),
-but I am also using the PowerShell script, without the vpnkit feature,
-on a Windows 10 version 20H2 (build 19042).
+This project was initially created to work on Windows 10 version 1909 (build 18363),
+but I have since upgraded to Windows 10 version 21H2 (build 19044).
+Not tested with Windows 11.
 
 If you have a different version of Windows you may want to check 
 the [release notes for Windows Subsystem for Linux](https://docs.microsoft.com/en-us/windows/wsl/release-notes)
@@ -52,9 +52,10 @@ out of the previous rationale.
 
 I take no responsibility if anything bad happens if you decide to try it out.
 
-However, I don't expect any problems, and I assume it could be usefull
+However, I don't expect any problems, and I assume it could be useful
 also for others, so please: Just try it out. If you come across any issues,
-I would appreciate if you report them as issues, so that I can make improvements.
+or have any suggestions, I would appreciate if you report them in my GitHub
+project, and I will do my best to make the necessary improvements!
 
 ## Main features
 
