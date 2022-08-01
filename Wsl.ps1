@@ -402,7 +402,11 @@ function Get-SevenZip
 		try
 		{
 			# Need the full (x64) edition to be able to extract installers etc.
-			$ReleaseInfo = Invoke-RestMethod -Uri "https://sourceforge.net/projects/sevenzip/rss?path=/7-Zip" -DisableKeepAlive | Where-Object { $_.title.'#cdata-section' -match "(?:/7-Zip/)(\d+(\.\d+)*)(?:/7z\d+-x64.exe)" } | Select-Object -First 1
+			# Picking version number from the url path, e.g. "21.03" from /7-Zip/21.03/7z2103-x64.exe,
+			# sorting as string assuming all but the first part is zero-filled to fixed two digit length.
+			$ReleaseInfo = Invoke-RestMethod -Uri "https://sourceforge.net/projects/sevenzip/rss?path=/7-Zip" -DisableKeepAlive | Where-Object { $_.title.'#cdata-section' -match "(?:/7-Zip/)(\d+(\.\d+)*)(?:/7z\d+-x64.exe)" } | Select-Object -Property @{Name = 'title'; Expression={$_.title.'#cdata-section'}}, pubDate, content, @{Name = 'version'; Expression={$Matches[1]}} | Sort-Object -Property version -Descending | Select-Object -First 1
+			if (-not $ReleaseInfo) { throw "Failed to find release info for 7-Zip" }
+
 			# Download the basic edition if necessary, either because it is the requested edition or because it is needed to extract a more advanced edition later.
 			# The full edition download is itself an archive, but its 7z/LZMA so we just need the simplest single-binary "7-Zip Reduced"
 			# which there is a direct download link for, so we download it temporarily if not finding something else.
@@ -419,13 +423,22 @@ function Get-SevenZip
 				if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
 				$SevenZipUtilPath = $DownloadFullName
 			}
+
 			# Download the full edition
 			Write-Verbose "Downloading latest version of 7-Zip Full edition"
-			$DownloadName = $ReleaseInfo.title.'#cdata-section'.Split("/")[-1]
+			$DownloadName = $ReleaseInfo.title.Split("/")[-1]
 			$DownloadUrl = "https://www.7-zip.org/a/${DownloadName}"
 			$DownloadFullName = Join-Path $TempDirectory $DownloadName
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
+
+			# Verify hash
+			$ExpectedHash = $ReleaseInfo.content.hash.'#text'
+			$ExpectedHashAlgorithm = $ReleaseInfo.content.hash.algo
+			$ActualHash = (Get-FileHash -Algorithm $ExpectedHashAlgorithm $DownloadFullName).Hash
+			if ($ActualHash -ne $ExpectedHash) { throw "Checksum mismatch in downloaded file ${DownloadFullName}: Expected ${ExpectedHash}, but was ${ActualHash}" }
+			Write-Verbose "Checksum successfully verified: ${ExpectedHash}"
+
 			# Extract (using the downloaded single-binary reduced version, 7zr.exe, which can extract .7z and .lzma files only)
 			&$SevenZipUtilPath e -y "-o${DownloadDirectory}" "${DownloadFullName}" '7z.exe' '7z.dll' | Out-Verbose
 			Remove-Item -LiteralPath $DownloadFullName
@@ -440,6 +453,92 @@ function Get-SevenZip
 		}
 	}
 	$SevenZipPath
+}
+
+# .SYNOPSIS
+# Utility function to get path to OpenSSL utility, downloading it if necessary.
+function Get-OpenSsl
+{
+	[CmdletBinding()]
+	param
+	(
+		# The directory path where OpenSSL (openssl.exe, libssl-*.dll and libcrypto-*.dll) will be downloaded into, if necessary.
+		[Parameter(Mandatory)] [ValidateNotNullOrEmpty()] [string] $DownloadDirectory,
+
+		# Optional working directory where downloads will be temporarily placed. Default is current directory.
+		[Parameter(Mandatory=$false)] [ValidateNotNullOrEmpty()] [string] $WorkingDirectory = (Get-Location -PSProvider FileSystem).ProviderPath,
+
+		# Optional search path to 7-Zip utility. It is required for extracting downloads,
+		# but will be temporarily downloaded if not found.
+		[string[]] $SevenZip = ("7z", ".\7z")
+	)
+	$DownloadDirectory = Get-Directory -Path $DownloadDirectory -Create
+	$ApplicationExe = "openssl.exe"
+	$OpenSslPath = Join-Path $DownloadDirectory $ApplicationExe
+	if (Test-Path -PathType Leaf $OpenSslPath) {
+		Write-Verbose "OpenSSL already exists: $OpenSslPath"
+	} else {
+		$TempDirectory = New-TempDirectory -Path $WorkingDirectory
+		try
+		{
+			# Make sure we have required 7-Zip utility available, download into temp directory if necessary.
+			$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
+			if (-not $SevenZipPath) {
+				Write-Host "Downloading required 7-Zip utility into temporary directory (use parameter -SevenZip to avoid)..."
+				$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+			}
+
+			# Get OpenSSH release information from official conda-forge repository
+			$RepositoryUrl = "https://conda.anaconda.org/conda-forge/win-64"
+			Write-Verbose "Downloading conda repository"
+			$DownloadName = "repodata.json.bz2"
+			$DownloadUrl = "${RepositoryUrl}/${DownloadName}"
+			$DownloadFullName = Join-Path $TempDirectory $DownloadName
+			Save-File -Url $DownloadUrl -Path $DownloadFullName
+			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Download of conda repository seems to have failed, cannot find downloaded file ${DownloadFullName}" }
+			&$SevenZipPath x "-o${TempDirectory}" $DownloadFullName | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ } } | Write-Verbose
+			Remove-Item -LiteralPath $DownloadFullName # Delete the .json.bz2 just as soon as we're done with it (though, will delete entire temp dir later)
+			$DownloadFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadName))
+			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Extraction of conda repository archive seems to have failed, cannot find extracted file ${DownloadFullName}" }
+			$ReleaseInfo = (Get-Content -Raw $DownloadFullName | ConvertFrom-Json | Select-Object -ExpandProperty packages | Select-Object -Property "openssl*").PSObject | Select-Object -ExpandProperty Properties | Where-Object { $_.Value.version -as [version] } | ForEach-Object { @{ Name = $_.Name; Version = [version]$_.Value.version; BuildNumber = $_.Value.build_number; Build = $_.Value.build; Timestamp = [datetime]::new(1970,1,1,0,0,0,[System.DateTimeKind]::Utc).AddMilliseconds($_.Value.timestamp); Hash = $_.Value.sha256 } } | Sort-Object -Property @{Expression={$_.Version}; Descending=$true}, @{Expression={$_.BuildNumber}; Descending=$true}, @{Expression={$_.Timestamp}; Descending=$true} | Select-Object -First 1
+			if (-not $ReleaseInfo) { throw "Failed to find release info for OpenSSL" }
+
+			# Download latest release as compressed archive
+			Write-Verbose "Downloading from conda repository version $($ReleaseInfo.Version) (build $($ReleaseInfo.BuildNumber) uploaded $($ReleaseInfo.Timestamp))"
+			$DownloadName = $ReleaseInfo.Name
+			$DownloadUrl = "${RepositoryUrl}/${DownloadName}"
+			$DownloadFullName = Join-Path $TempDirectory $DownloadName
+			Save-File -Url $DownloadUrl -Path $DownloadFullName
+			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
+
+			# Verify hash
+			$ExpectedHash = $ReleaseInfo.Hash
+			$ExpectedHashAlgorithm = "SHA256"
+			$ActualHash = (Get-FileHash -Algorithm $ExpectedHashAlgorithm $DownloadFullName).Hash
+			if ($ActualHash -ne $ExpectedHash) { throw "Checksum mismatch in downloaded file ${DownloadFullName}: Expected ${ExpectedHash}, but was ${ActualHash}" }
+			Write-Verbose "Checksum successfully verified: ${ExpectedHash}"
+
+			# Extract .tar from .tar.bz2 compressed archive
+			Write-Verbose "Extracting .tar from .tar.bz2"
+			&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ } } | Write-Verbose
+			Remove-Item -LiteralPath $DownloadFullName -ErrorAction Ignore # Deletes .tar.bz2
+			$DownloadFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadName))
+
+			# Extract openssl.exe, libcrypt-*.dll and libssl-*.dll from the .tar archive (ignore everything else)
+			Write-Verbose "Extracting program files from .tar"
+			&$SevenZipPath e -y "-o${DownloadDirectory}" "${DownloadFullName}" "Library\bin\openssl.exe" "Library\bin\libssl-*.dll" "Library\bin\libcrypto-*.dll" | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ } } | Write-Verbose
+			Remove-Item -LiteralPath $DownloadFullName # Deletes the .tar
+			if ($LastExitCode -ne 0) { throw "7-Zip extraction failed with error $LastExitCode" }
+			if (-not (Test-Path -PathType Leaf $OpenSslPath)) { throw "Cannot find extracted $OpenSslPath" }
+		}
+		finally
+		{
+			if ($TempDirectory -and (Test-Path -LiteralPath $TempDirectory)) {
+				Remove-Item -LiteralPath $TempDirectory -Recurse
+			}
+		}
+	}
+	$OpenSslPath
 }
 
 # .SYNOPSIS
@@ -1491,6 +1590,7 @@ function New-Distro
 		# Optional search path to OpenSSL utility. It is only needed if creating custom user
 		# with a password, and where the distro image does not have a preinstalled tool for
 		# encrypting passwords. Currently this is only the Fedora minimal container image!
+		# Will be temporarily downloaded if not found.
 		[string[]] $OpenSsl = ("openssl", ".\openssl"),
 
 		[switch] $SetDefault
@@ -1513,6 +1613,7 @@ function New-Distro
 			$DownloadUrl = $Download.Uri
 			$DownloadName = $Download.FileName
 			$DownloadFullName = Join-Path $TempDirectory $DownloadName
+			$SevenZipPath = $null # Variable to be set and re-used
 			if (([uri]$DownloadUrl).Host -eq 'api.github.com') {
 				Save-File -Url $DownloadUrl -Path $DownloadFullName -Credential $GitHubCredential
 			} else {
@@ -1533,10 +1634,12 @@ function New-Distro
 			}
 			if ($DownloadFullName -like '*.AppxBundle') {
 				# Extract appx installer from AppxBundle, then fake that as the downloaded file and continue with extracting it
-				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
 				if (-not $SevenZipPath) {
-					Write-Host "Getting required 7-Zip utility (temporary)..."
-					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+					$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
+					if (-not $SevenZipPath) {
+						Write-Host "Downloading required 7-Zip utility into temporary directory (use parameter -SevenZip to avoid)..."
+						$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+					}
 				}
 				&$SevenZipPath e -y "-i!*DistroLauncher-Appx_*_x64.appx" "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose
 				Remove-Item -LiteralPath $DownloadFullName
@@ -1547,10 +1650,12 @@ function New-Distro
 			}
 			if ($DownloadFullName -like "*.appx") {
 				# Extract installer archive from appx installer (requires 7-Zip)
-				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
 				if (-not $SevenZipPath) {
-					Write-Host "Getting required 7-Zip utility (temporary)..."
-					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+					$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
+					if (-not $SevenZipPath) {
+						Write-Host "Downloading required 7-Zip utility into temporary directory (use parameter -SevenZip to avoid)..."
+						$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+					}
 				}
 				&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" 'install.tar.gz' | Out-Verbose
 				Remove-Item -LiteralPath $DownloadFullName
@@ -1560,10 +1665,12 @@ function New-Distro
 			} elseif ($DistroImage.Id -eq 'archlinux-bootstrap') {
 				# Arch download is archive file that must be modified: The compressed .tar contains
 				# filesystem in subfolder but WSL requires it to be at root!
-				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
 				if (-not $SevenZipPath) {
-					Write-Host "Getting required 7-Zip utility (temporary)..."
-					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+					$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
+					if (-not $SevenZipPath) {
+						Write-Host "Downloading required 7-Zip utility into temporary directory (use parameter -SevenZip to avoid)..."
+						$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+					}
 				}
 				&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose
 				Remove-Item -LiteralPath $DownloadFullName
@@ -1575,10 +1682,12 @@ function New-Distro
 				if ($LastExitCode -ne 0) { throw "Patching of archive '${FileSystemArchiveFullName}' for WSL import failed with error $LastExitCode" }
 			} elseif ($DistroImage.Id -like 'fedora-container-*') {
 				# If image is Fedora Base Image: It is a compressed archive .tar.xz that must be uncompressed to .tar, then extracted to find the root filesystem as another .tar.
-				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
 				if (-not $SevenZipPath) {
-					Write-Host "Getting required 7-Zip utility (temporary)..."
-					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+					$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
+					if (-not $SevenZipPath) {
+						Write-Host "Downloading required 7-Zip utility into temporary directory (use parameter -SevenZip to avoid)..."
+						$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+					}
 				}
 				&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose # Extract .tar.xz
 				Remove-Item -LiteralPath $DownloadFullName
@@ -1594,7 +1703,7 @@ function New-Distro
 				<#
 				$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
 				if (-not $SevenZipPath) {
-					Write-Host "Getting required 7-Zip utility (temporary)..."
+					Write-Host "Downloading required 7-Zip utility into temporary directory (use parameter -SevenZip to avoid)..."
 					$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
 				}
 				&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose
@@ -1678,9 +1787,15 @@ function New-Distro
 								if ($User.Password.Length -gt 0) {
 									# Set password (like 'echo "user:password | chpasswd"' would do).
 									# Using OpenSSL to create encrypted password, based on SHA512 and with a random generated salt.
-									# Note: Requires OpenSSL utility available here on host, to be able to encrypt the password!
+									# Note: Requires OpenSSL utility available here on host, to be able to encrypt the password,
+									# downloading it if necessary (and 7-Zip is then also needed, downloading if needed, but 
+									# re-using if already downloaded to temporary directory above).
 									$OpenSslPath = Get-Command -CommandType Application -Name $OpenSsl -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
-									if ($OpenSslPath) {
+									if (-not $OpenSslPath) {
+										Write-Host "Downloading required OpenSSL utility into temporary directory (use parameter -OpenSsl to avoid)..."
+										$OpenSslPath = Get-OpenSsl -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory -SevenZip $(if($SevenZipPath){$SevenZipPath}else{$SevenZip}) # Will create new tempfolder as subfolder of current $TempDirectory
+									}
+									#if ($OpenSslPath) {
 										# Note: Needs to sent password in clear text to openssl command, but sends it via stdin
 										# instead of command line argument to avoid it being shown in process logs etc.
 										$EncryptedPasswordString = $User.GetNetworkCredential().Password | &$OpenSslPath passwd -6 -stdin
@@ -1692,9 +1807,9 @@ function New-Distro
 										} else {
 											Write-Warning "Failed to set password for user (error code ${LastExitCode} from OpenSSL while encrypting password)"
 										}
-									} else {
-										Write-Warning "Unable to set password for user (OpenSSL utility not found, see parameter -OpenSsl)"
-									}
+									#} else {
+									#	Write-Warning "Unable to set password for user (OpenSSL utility not found, see parameter -OpenSsl)"
+									#}
 								} else {
 									Write-Warning "No password set"
 								}
@@ -2289,7 +2404,7 @@ function New-VpnKit
 		$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
 		if (-not $SevenZipPath)
 		{
-			Write-Host "Getting required 7-Zip utility (temporary)..."
+			Write-Host "Downloading required 7-Zip utility into temporary directory (use parameter -SevenZip to avoid)..."
 			if (-not $TempDirectory) { $TempDirectory = New-TempDirectory -Path $WorkingDirectory }
 			$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
 		}
