@@ -420,7 +420,7 @@ function Get-SevenZip
 				$DownloadUrl = "https://www.7-zip.org/a/${DownloadName}"
 				$DownloadFullName = Join-Path $TempDirectory $DownloadName
 				Save-File -Url $DownloadUrl -Path $DownloadFullName
-				if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
+				if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Download of 7-Zip Basic, required to extract full edition archive download, seems to have failed, cannot find downloaded file ${DownloadBasicFullName}" }
 				$SevenZipUtilPath = $DownloadFullName
 			}
 
@@ -430,20 +430,20 @@ function Get-SevenZip
 			$DownloadUrl = "https://www.7-zip.org/a/${DownloadName}"
 			$DownloadFullName = Join-Path $TempDirectory $DownloadName
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
-			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
+			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Download of 7-Zip Full edition seems to have failed, cannot find downloaded file ${DownloadFullName}" }
 
 			# Verify hash
 			$ExpectedHash = $ReleaseInfo.content.hash.'#text'
 			$ExpectedHashAlgorithm = $ReleaseInfo.content.hash.algo
 			$ActualHash = (Get-FileHash -Algorithm $ExpectedHashAlgorithm $DownloadFullName).Hash
-			if ($ActualHash -ne $ExpectedHash) { throw "Checksum mismatch in downloaded file ${DownloadFullName}: Expected ${ExpectedHash}, but was ${ActualHash}" }
+			if ($ActualHash -ne $ExpectedHash) { throw "Checksum mismatch in downloaded 7-Zip Full edition archive ${DownloadFullName}: Expected ${ExpectedHash}, but was ${ActualHash}" }
 			Write-Verbose "Checksum successfully verified: ${ExpectedHash}"
 
-			# Extract (using the downloaded single-binary reduced version, 7zr.exe, which can extract .7z and .lzma files only)
+			# Extract (using the existing version, possibly the downloaded single-binary reduced version, 7zr.exe, which can extract .7z and .lzma files only)
 			&$SevenZipUtilPath e -y "-o${DownloadDirectory}" "${DownloadFullName}" '7z.exe' '7z.dll' | Out-Verbose
 			Remove-Item -LiteralPath $DownloadFullName
-			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
-			if (-not (Test-Path -PathType Leaf $SevenZipPath)) { throw "Cannot find extracted $SevenZipPath" }
+			if ($LastExitCode -ne 0) { throw "Extraction of downloaded 7-Zip Full edition archive ${DownloadFullName} failed with error $LastExitCode" }
+			if (-not (Test-Path -PathType Leaf $SevenZipPath)) { throw "Cannot find extracted 7-Zip Full edition executable $SevenZipPath" }
 		}
 		finally
 		{
@@ -481,7 +481,7 @@ function Get-OpenSsl
 		$TempDirectory = New-TempDirectory -Path $WorkingDirectory
 		try
 		{
-			# Make sure we have required 7-Zip utility available, download into temp directory if necessary.
+			# Make sure we have required 7-Zip utility available, download into temp directory if necessary (will be deleted at the end when deleting entire temp directory)
 			$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
 			if (-not $SevenZipPath) {
 				Write-Host "Downloading required 7-Zip utility into temporary directory (use parameter -SevenZip to avoid)..."
@@ -497,10 +497,11 @@ function Get-OpenSsl
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Download of conda repository seems to have failed, cannot find downloaded file ${DownloadFullName}" }
 			&$SevenZipPath x "-o${TempDirectory}" $DownloadFullName | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ } } | Write-Verbose
-			Remove-Item -LiteralPath $DownloadFullName # Delete the .json.bz2 just as soon as we're done with it (though, will delete entire temp dir later)
+			Remove-Item -LiteralPath $DownloadFullName # Delete the repodata.json.bz2 just as soon as we're done with it (though, will delete entire temp dir later)
 			$DownloadFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadName))
 			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Extraction of conda repository archive seems to have failed, cannot find extracted file ${DownloadFullName}" }
 			$ReleaseInfo = (Get-Content -Raw $DownloadFullName | ConvertFrom-Json | Select-Object -ExpandProperty packages | Select-Object -Property "openssl*").PSObject | Select-Object -ExpandProperty Properties | Where-Object { $_.Value.version -as [version] } | ForEach-Object { @{ Name = $_.Name; Version = [version]$_.Value.version; BuildNumber = $_.Value.build_number; Build = $_.Value.build; Timestamp = [datetime]::new(1970,1,1,0,0,0,[System.DateTimeKind]::Utc).AddMilliseconds($_.Value.timestamp); Hash = $_.Value.sha256 } } | Sort-Object -Property @{Expression={$_.Version}; Descending=$true}, @{Expression={$_.BuildNumber}; Descending=$true}, @{Expression={$_.Timestamp}; Descending=$true} | Select-Object -First 1
+			Remove-Item -LiteralPath $DownloadFullName # Delete the repodata.json just as soon as we're done with it (though, will delete entire temp dir later)
 			if (-not $ReleaseInfo) { throw "Failed to find release info for OpenSSL" }
 
 			# Download latest release as compressed archive
@@ -509,27 +510,28 @@ function Get-OpenSsl
 			$DownloadUrl = "${RepositoryUrl}/${DownloadName}"
 			$DownloadFullName = Join-Path $TempDirectory $DownloadName
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
-			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
+			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Download of OpenSSL seems to have failed, cannot find downloaded file ${DownloadFullName}" }
 
 			# Verify hash
 			$ExpectedHash = $ReleaseInfo.Hash
 			$ExpectedHashAlgorithm = "SHA256"
 			$ActualHash = (Get-FileHash -Algorithm $ExpectedHashAlgorithm $DownloadFullName).Hash
-			if ($ActualHash -ne $ExpectedHash) { throw "Checksum mismatch in downloaded file ${DownloadFullName}: Expected ${ExpectedHash}, but was ${ActualHash}" }
+			if ($ActualHash -ne $ExpectedHash) { throw "Checksum mismatch in downloaded OpenSSL archive ${DownloadFullName}: Expected ${ExpectedHash}, but was ${ActualHash}" }
 			Write-Verbose "Checksum successfully verified: ${ExpectedHash}"
 
 			# Extract .tar from .tar.bz2 compressed archive
 			Write-Verbose "Extracting .tar from .tar.bz2"
 			&$SevenZipPath x -y "-o${TempDirectory}" "${DownloadFullName}" | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ } } | Write-Verbose
-			Remove-Item -LiteralPath $DownloadFullName -ErrorAction Ignore # Deletes .tar.bz2
+			Remove-Item -LiteralPath $DownloadFullName -ErrorAction Ignore # Delete the .tar.bz2
 			$DownloadFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadName))
+			if (-not (Test-Path -PathType Leaf $DownloadFullName)) { throw "Cannot find extracted OpenSSL archive $DownloadFullName" }
 
 			# Extract openssl.exe, libcrypt-*.dll and libssl-*.dll from the .tar archive (ignore everything else)
 			Write-Verbose "Extracting program files from .tar"
 			&$SevenZipPath e -y "-o${DownloadDirectory}" "${DownloadFullName}" "Library\bin\openssl.exe" "Library\bin\libssl-*.dll" "Library\bin\libcrypto-*.dll" | ForEach-Object { if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ } } | Write-Verbose
 			Remove-Item -LiteralPath $DownloadFullName # Deletes the .tar
-			if ($LastExitCode -ne 0) { throw "7-Zip extraction failed with error $LastExitCode" }
-			if (-not (Test-Path -PathType Leaf $OpenSslPath)) { throw "Cannot find extracted $OpenSslPath" }
+			if ($LastExitCode -ne 0) { throw "Extraction of OpenSSL archive failed with error $LastExitCode" }
+			if (-not (Test-Path -PathType Leaf $SevenZipPath)) { throw "Cannot find extracted OpenSSL executable $SevenZipPath" }
 		}
 		finally
 		{
