@@ -1,11 +1,11 @@
 #!/bin/sh
 #
-# Perform full package upgrade, and installs some basic packages missing.
+# Perform full package upgrade, and installs some basic packages not preinstalled.
 #
 # NOTE:
-# - Written for WSL import of docker root filesystem of Fedora 33 and 34,
+# - Originally written for WSL import of docker root filesystem of Fedora 33 and 34,
 #   from Fedora Container Base image (with dnf) and Fedora Container Minimal
-#   Base image (with microdnf).
+#   Base image (with microdnf). Updated for Fedora 35 - 37.
 # - Must be run by actual root user, not by use of sudo from regular user,
 #   (sudo is not installed by default in the Fedora Container Minimal Base image).
 # - Interactive! Will prompt user before doing any changes!
@@ -63,6 +63,8 @@ else
     echo "Timezone database exists"
 fi
 
+# Install some basic packages not always preinstalled.
+# Note: Fedora 35 and older did not include findutils, but from Fedora 36 it is preinstalled.
 echo
 echo "Installing basic packages..."
 if ! $dnf --nodocs install \

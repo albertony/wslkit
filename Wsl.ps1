@@ -1346,13 +1346,14 @@ function Get-DistroImage
 	# There is also an unofficial Alpine WSL that is officially endorsed by the Alpine project (https://gitlab.alpinelinux.org/alpine/aports/-/issues/9408),
 	# but it is only available on Microsoft Store without a direct download link, and anyway it is just a small wrapper around the
 	# official "Minimal root filesystem" distribution, so we can easily replicate the necessary steps when installing!
-	$ArchiveName = Invoke-WebRequest -Uri 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/latest-releases.yaml' -UseBasicParsing -DisableKeepAlive | Select-String -Pattern 'alpine-minirootfs-(.*)-x86_64.tar.gz' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
+	$ArchiveName, $Version = Invoke-WebRequest -Uri 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/latest-releases.yaml' -UseBasicParsing -DisableKeepAlive | Select-String -Pattern 'alpine-minirootfs-(.*)-x86_64.tar.gz' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0,1 | Select-Object -ExpandProperty Value
 	if ($ArchiveName) {
 		$Checksum = Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}.sha512" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		$Script:DistroImages += @(
 			[PSCustomObject]@{
 				Id = 'alpine-minirootfs'
 				Name = 'Alpine Minimal Root Filesystem'
+				Version = $Version
 				Microsoft = $false
 				Url = "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}"
 				Checksum = [PSCustomObject]@{
@@ -1367,17 +1368,21 @@ function Get-DistroImage
 	# There is only an unofficial Arch WSL available.
 	# Note: The compressed tar file must be fixed before import, the filesystem must be moved from subfolder root.x86_64 to root.
 	$ReleaseFolder = Invoke-WebRequest -Uri 'https://archive.archlinux.org/iso/' -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -Last 1 | Select-Object -ExpandProperty href
-	$ArchiveName = "archlinux-bootstrap-$($ReleaseFolder.TrimEnd('/'))-x86_64.tar.gz"
+	$Version = $ReleaseFolder.TrimEnd('/')
+	$ArchiveName = "archlinux-bootstrap-${Version}-x86_64.tar.gz"
 	if ($ReleaseFolder) {
-		$Checksum = Invoke-WebRequest -Uri "https://archive.archlinux.org/iso/${ReleaseFolder}sha1sums.txt" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "(?m)^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+		# Checksum: Before release 2022.04.01 MD5 and SHA-1 checksums were published, then B2 and SHA-256 were added,
+		# and starting with release 2022.10.01 MD5 and SHA-1 checksums were removed leaving only B2 and SHA-256 (b2sums.txt and sha256sums.txt).
+		$Checksum = Invoke-WebRequest -Uri "https://archive.archlinux.org/iso/${ReleaseFolder}sha256sums.txt" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "(?m)^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		$Script:DistroImages += @(
 			[PSCustomObject]@{
 				Id = 'archlinux-bootstrap'
 				Name = 'Arch Bootstrap'
+				Version = $Version
 				Microsoft = $false
 				Url = "https://archive.archlinux.org/iso/${ReleaseFolder}${ArchiveName}"
 				Checksum = [PSCustomObject]@{
-					Algorithm = "SHA1"
+					Algorithm = "SHA256"
 					Value = $Checksum
 				}
 			}
@@ -1404,14 +1409,22 @@ function Get-DistroImage
 	#}
 	# Alternative 2: Downloading from official download server, which also includes both the full
 	# "Fedora Container Base" and also the more minimalistic "Fedora Container Minimal Base".
+	# Pick all development versions, including the special bleeding-edge version labelled "Rawhide" instead of a version number,
+	# and then the latest two of regular releases.
 	# Note: These are .tar.xz archives, where the root filesystem is another .tar inside a subdirectory, so must extract three times!
 	$BaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/"
-	$Versions = @(
+	#$Versions = @(
+	#	@{
+	#		MajorVersion = "Rawhide"
+	#		BaseUrl = "${BaseUrl}development/"
+	#	}
+	#)
+	$Versions = @(Invoke-WebRequest -Uri "${BaseUrl}development/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match '^(\d+|rawhide)/' } | ForEach-Object { $Matches[1] } | ForEach-Object {
 		@{
-			MajorVersion = "Rawhide"
+			MajorVersion = (Get-Culture).TextInfo.ToTitleCase($_) # Make "rawhide" into "Rawhide"
 			BaseUrl = "${BaseUrl}development/"
 		}
-	)
+	}
 	$Versions += (Invoke-WebRequest -Uri "${BaseUrl}releases/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match '^(\d+)/' } | ForEach-Object { [int] $Matches[1] } | Sort-Object -Descending | Select-Object -First 2 | ForEach-Object {
 		@{
 			MajorVersion = $_
@@ -1422,12 +1435,13 @@ function Get-DistroImage
 		$MajorVersion = $_.MajorVersion
 		$BaseUrl = "$($_.BaseUrl)$(`"$($_.MajorVersion)`".ToLower())/"
 		$ChecksumFile = (Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/" -UseBasicParsing -DisableKeepAlive).Links.href | Select-String -Pattern "^Fedora-Container-.*-CHECKSUM$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
-		(Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match "^(Fedora-Container-(?:Minimal-)?Base-${MajorVersion})-.*\.x86_64\.tar.xz$" } | ForEach-Object {
+		(Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match "^(Fedora-Container-(?:Minimal-)?Base-${MajorVersion})-(.*)\.x86_64\.tar.xz$" } | ForEach-Object {
 			$Checksum = (Invoke-RestMethod -Uri "${BaseUrl}Container/x86_64/images/${ChecksumFile}" -DisableKeepAlive) | Select-String -Pattern "(?m)^(.*)\s+\($($_.Replace(".","\."))\)\s+=\s+(.*)$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups
 			$Script:DistroImages += @(
 				[PSCustomObject]@{
 					Id = $Matches[1].ToLower()
-					Name = $Matches[1]
+					Name = $Matches[1].Replace("-", " ")
+					Version = $Matches[2]
 					Microsoft = $false
 					Url = "${BaseUrl}Container/x86_64/images/${_}"
 					Checksum = [PSCustomObject]@{
@@ -1439,6 +1453,7 @@ function Get-DistroImage
 		}
 	}
 
+	$Script:DistroImages = $Script:DistroImages | Sort-Object -Property Name
 	$Script:DistroImages
 }
 
@@ -3094,11 +3109,19 @@ function Install-VpnKit
 				if ($LastExitCode -eq 0) {
 					Write-Verbose "Skipping installation of package 'socat' because it is already present: ${SocatStatus}"
 				} else {
-					# TODO: Only packages for stable versions are available, so if distro image is based on Rawhide there is not a match - but should be use highest version number?
-					if ($DistroInfo.VersionCodeName -eq 'rawhide') {
-						$DownloadBaseUrl = 'https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Everything/x86_64/os/Packages/https://dl.fedoraproject.org/pub/fedora/linux/development/rawhide/Everything/x86_64/os/Packages/'
-					} else {
-						$DownloadBaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/releases/$($DistroInfo.VersionCodeName)/Everything/x86_64/os/Packages/"
+					# Note: Release versions and development versions are at separate paths. Development version is typically the Rawhide,
+					# which we could detect by testing $DistroInfo.VersionCodeName -eq 'rawhide', but there may also be other numerically
+					# named development versions. Therefore we simply test if the version code name is valid as part of a release url,
+					# and if not use a development url!
+					# 
+					$DownloadBaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/releases/$($DistroInfo.VersionCodeName)/Everything/x86_64/os/Packages/"
+					try
+					{
+						Invoke-RestMethod -Uri $DownloadBaseUrl -UseBasicParsing -DisableKeepAlive -Method Head | Out-Null
+					}
+					catch
+					{
+						$DownloadBaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/development/$($DistroInfo.VersionCodeName)/Everything/x86_64/os/Packages/"
 					}
 					$WorkingDirectory = Get-Directory -Path $WorkingDirectory -Create
 					$TempDirectory = New-TempDirectory -Path $WorkingDirectory
