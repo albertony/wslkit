@@ -1302,7 +1302,7 @@ function Get-DistroImage
 	$Script:DistroImages = @()
 
 	# Get Microsoft direct download links
-	$Script:DistroImages += Invoke-RestMethod -Uri https://raw.githubusercontent.com/microsoft/WSL/master/distributions/DistributionInfo.json -DisableKeepAlive | Select-Object -ExpandProperty Distributions | Where-Object -Property Amd64 -EQ $true | ForEach-Object {
+	$Script:DistroImages += Invoke-RestMethod -Uri https://raw.githubusercontent.com/microsoft/WSL/master/distributions/DistributionInfo.json -DisableKeepAlive | Select-Object -ExpandProperty Distributions | Where-Object -Property Amd64 -EQ $true | Where-object -Property Amd64PackageUrl | ForEach-Object {
 		[PSCustomObject]@{
 			Id = $_.Name
 			Name = $_.FriendlyName
@@ -1346,7 +1346,9 @@ function Get-DistroImage
 	# There is also an unofficial Alpine WSL that is officially endorsed by the Alpine project (https://gitlab.alpinelinux.org/alpine/aports/-/issues/9408),
 	# but it is only available on Microsoft Store without a direct download link, and anyway it is just a small wrapper around the
 	# official "Minimal root filesystem" distribution, so we can easily replicate the necessary steps when installing!
-	$ArchiveName, $Version = Invoke-WebRequest -Uri 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/latest-releases.yaml' -UseBasicParsing -DisableKeepAlive | Select-String -Pattern 'alpine-minirootfs-(.*)-x86_64.tar.gz' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0,1 | Select-Object -ExpandProperty Value
+	# There is another unofficial distro image based on the wsldl launcher (https://github.com/yuk7/AlpineWSL), which also more or less
+	# just downloads official root filesystem.
+	$ArchiveName, $Version = Invoke-WebRequest -Uri 'https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/latest-releases.yaml' -UseBasicParsing -DisableKeepAlive | Select-String -Pattern 'alpine-minirootfs-(.*)-x86_64\.tar\.gz' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0,1 | Select-Object -ExpandProperty Value
 	if ($ArchiveName) {
 		$Checksum = Invoke-WebRequest -Uri "https://dl-cdn.alpinelinux.org/alpine/latest-stable/releases/x86_64/${ArchiveName}.sha512" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
 		$Script:DistroImages += @(
@@ -1364,29 +1366,108 @@ function Get-DistroImage
 		)
 	}
 
-	# Arch official "bootstrap" distribution, latest version.
-	# There is only an unofficial Arch WSL available.
-	# Note: The compressed tar file must be fixed before import, the filesystem must be moved from subfolder root.x86_64 to root.
-	$ReleaseFolder = Invoke-WebRequest -Uri 'https://archive.archlinux.org/iso/' -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -Last 1 | Select-Object -ExpandProperty href
-	$Version = $ReleaseFolder.TrimEnd('/')
-	$ArchiveName = "archlinux-bootstrap-${Version}-x86_64.tar.gz"
-	if ($ReleaseFolder) {
-		# Checksum: Before release 2022.04.01 MD5 and SHA-1 checksums were published, then B2 and SHA-256 were added,
-		# and starting with release 2022.10.01 MD5 and SHA-1 checksums were removed leaving only B2 and SHA-256 (b2sums.txt and sha256sums.txt).
-		$Checksum = Invoke-WebRequest -Uri "https://archive.archlinux.org/iso/${ReleaseFolder}sha256sums.txt" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "(?m)^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+	# Void Linux official rootfs distribution, latest version (rolling release distro).
+	# It is available in two variants: glibc (default) and musl.
+	# There is an unofficial distro image based on the wsldl launcher (https://github.com/am11/VoidWSL),
+	# but it more or less just downloads the official root filesystem.
+	foreach ($Variant in @{Name="glibc"; ArchivePrefix="void-x86_64-ROOTFS-"}, @{Name="musl"; ArchivePrefix="void-x86_64-musl-ROOTFS-"}) {
+		$ArchiveName, $Version = Invoke-WebRequest -Uri 'https://repo-default.voidlinux.org/live/current/' -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Select-String -Pattern "$($Variant.ArchivePrefix)(.*)\.tar\.xz" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0,1 | Select-Object -ExpandProperty Value
+		if ($Version) {
+			$Checksum = Invoke-WebRequest -Uri "https://repo-default.voidlinux.org/live/current/sha256sum.txt" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "(?m)^SHA256 \(${ArchiveName}\) = (.*?)$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+			$Script:DistroImages += @(
+				[PSCustomObject]@{
+					Id = "void-rootfs-$($Variant.Name)"
+					Name = "Void Root Filesystem ($($Variant.Name))"
+					Version = $Version
+					Microsoft = $false
+					Url = "https://repo-default.voidlinux.org/live/current/${ArchiveName}"
+					Checksum = [PSCustomObject]@{
+						Algorithm = "SHA256"
+						Value = $Checksum
+					}
+				}
+			)
+		}
+	}
+
+	# Clear Linux official docker container image base archive, latest version (rolling release distro).
+	# There is an unofficial distro image based on the wsldl launcher (https://github.com/wight554/ClearWSL),
+	# but it more or less just downloads this same archive.
+	$Version = Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/clearlinux/docker-brew-clearlinux/base/VERSION' -UseBasicParsing -DisableKeepAlive
+	if ($Version) {
 		$Script:DistroImages += @(
 			[PSCustomObject]@{
-				Id = 'archlinux-bootstrap'
-				Name = 'Arch Bootstrap'
+				Id = 'clearlinux-container-base'
+				Name = 'Clear Linux OS Container Base'
 				Version = $Version
 				Microsoft = $false
-				Url = "https://archive.archlinux.org/iso/${ReleaseFolder}${ArchiveName}"
-				Checksum = [PSCustomObject]@{
-					Algorithm = "SHA256"
-					Value = $Checksum
-				}
+				Url = 'https://raw.githubusercontent.com/clearlinux/docker-brew-clearlinux/base/base.tar.xz'
 			}
 		)
+	}
+
+	# Rocky Linux official docker container image root filesystem, latest version.
+	# Downloading official container image root file systems, which the officially documentation
+	# describes how can simply be imported into WSL
+	# (https://docs.rockylinux.org/guides/interoperability/import_rocky_to_wsl/).
+	# There are three variants, from smallest to largest: Minimal, Base and UBI (Universal Base Image).
+	# Downloading from dl.rockylinux.org, which uses CDN, while an alternative is download.rockylinux.org which I think is direct download.
+	foreach ($Variant in 'Minimal', 'Base', 'UBI') {
+		$ReleaseFolder = Invoke-WebRequest -Uri 'http://dl.rockylinux.org/pub/rocky/' -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_.EndsWith('/') } | Select-Object -Last 1
+		if ($ReleaseFolder) {
+			$Version = $ReleaseFolder.TrimEnd('/')
+			$VersionMajor = $Version.Split(".")[0]
+			$ArchiveName = "Rocky-${VersionMajor}-Container-${Variant}.latest.x86_64.tar.xz"
+			$DownloadUrl = "http://dl.rockylinux.org/pub/rocky/${Version}/images/x86_64/${ArchiveName}"
+			$Checksum = Invoke-WebRequest -Uri "${DownloadUrl}.CHECKSUM" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "(?m)^SHA256 \(${ArchiveName}\) = (.*?)$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+			$Script:DistroImages += @(
+				[PSCustomObject]@{
+					Id = "rocky-container-$($Variant.ToLower())"
+					Name = "Rocky Container ${Variant}"
+					Version = $Version
+					Microsoft = $false
+					Url = $DownloadUrl
+					Checksum = [PSCustomObject]@{
+						Algorithm = "SHA256"
+						Value = $Checksum
+					}
+				}
+			)
+		}
+	}
+
+	# Arch official "bootstrap" distribution, latest version (rolling release distro).
+	# There is only an unofficial Arch WSL available.
+	# Note: The compressed tar file must be fixed before import, the filesystem must be moved from subfolder root.x86_64 to root.
+	$ReleaseFolders = Invoke-WebRequest -Uri 'https://archive.archlinux.org/iso/' -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -Last 2 | Select-Object -ExpandProperty href
+	foreach ($ReleaseFolder in $ReleaseFolders) {
+		$Version = $ReleaseFolder.TrimEnd('/')
+		$ArchiveName = "archlinux-bootstrap-${Version}-x86_64.tar.gz"
+		# Checksum: Before release 2022.04.01 MD5 and SHA-1 checksums were published, then B2 and SHA-256 were added,
+		# and starting with release 2022.10.01 MD5 and SHA-1 checksums were removed leaving only B2 and SHA-256 (b2sums.txt and sha256sums.txt).
+		try {
+			$Checksum = Invoke-WebRequest -Uri "https://archive.archlinux.org/iso/${ReleaseFolder}sha256sums.txt" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "(?m)^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+			$Script:DistroImages += @(
+				[PSCustomObject]@{
+					Id = 'archlinux-bootstrap'
+					Name = 'Arch Bootstrap'
+					Version = $Version
+					Microsoft = $false
+					Url = "https://archive.archlinux.org/iso/${ReleaseFolder}${ArchiveName}"
+					Checksum = [PSCustomObject]@{
+						Algorithm = "SHA256"
+						Value = $Checksum
+					}
+				}
+			)
+			break # Stop at first found entry (see comment in exception handler for 404 respose, below)
+		} catch [System.Net.WebException] {
+			if($_.Exception.Response.StatusCode.Value__ -eq 404) {
+				# Silently ignore release folders missing sha256sums.txt.
+				# In some cases the newest folder has been created but is still empty,
+				# and then we want to go with the previous one instead.
+			}
+		}
 	}
 
 	# Fedora root filesystem from official Docker images, last three releases, including the "rawhide" development/daily build.
@@ -1421,6 +1502,7 @@ function Get-DistroImage
 	#)
 	$Versions = @(Invoke-WebRequest -Uri "${BaseUrl}development/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match '^(\d+|rawhide)/' } | ForEach-Object { $Matches[1] } | ForEach-Object {
 		@{
+			Development = $true
 			MajorVersion = (Get-Culture).TextInfo.ToTitleCase($_) # Make "rawhide" into "Rawhide"
 			BaseUrl = "${BaseUrl}development/"
 		}
@@ -1432,15 +1514,16 @@ function Get-DistroImage
 		}
 	}
 	$Versions | ForEach-Object {
+		$Development = $_.Development
 		$MajorVersion = $_.MajorVersion
 		$BaseUrl = "$($_.BaseUrl)$(`"$($_.MajorVersion)`".ToLower())/"
 		$ChecksumFile = (Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/" -UseBasicParsing -DisableKeepAlive).Links.href | Select-String -Pattern "^Fedora-Container-.*-CHECKSUM$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 0 | Select-Object -ExpandProperty Value
-		(Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match "^(Fedora-Container-(?:Minimal-)?Base-${MajorVersion})-(.*)\.x86_64\.tar.xz$" } | ForEach-Object {
+		(Invoke-WebRequest -Uri "${BaseUrl}Container/x86_64/images/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match "^(Fedora-Container-(?:Minimal-)?Base-${MajorVersion})-(.*)\.x86_64\.tar\.xz$" } | ForEach-Object {
 			$Checksum = (Invoke-RestMethod -Uri "${BaseUrl}Container/x86_64/images/${ChecksumFile}" -DisableKeepAlive) | Select-String -Pattern "(?m)^(.*)\s+\($($_.Replace(".","\."))\)\s+=\s+(.*)$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups
 			$Script:DistroImages += @(
 				[PSCustomObject]@{
-					Id = $Matches[1].ToLower()
-					Name = $Matches[1].Replace("-", " ")
+					Id = "$($Matches[1].ToLower())$(if($Development){'-development'})"
+					Name = "$($Matches[1].Replace("-", " "))$(if($Development){' (Development)'})"
 					Version = $Matches[2]
 					Microsoft = $false
 					Url = "${BaseUrl}Container/x86_64/images/${_}"
@@ -1728,6 +1811,19 @@ function New-Distro
 				$FileSystemArchiveFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadFullName))
 				if (-not (Test-Path -LiteralPath $FileSystemArchiveFullName)) { throw "Cannot find extracted ${FileSystemArchiveFullName}" }
 				#>
+			} elseif ($DownloadFullName.EndsWith(".tar.xz")) {
+				# Original version of WSL can import gz but not xz compressed tar, so we must extract the tar and import that using 7-Zip first.
+				if (-not $SevenZipPath) {
+					$SevenZipPath = Get-Command -CommandType Application -Name $SevenZip -ErrorAction Ignore | Select-Object -First 1 -ExpandProperty Source
+					if (-not $SevenZipPath) {
+						Write-Host "Downloading required 7-Zip utility into temporary directory (use parameter -SevenZip to avoid)..."
+						$SevenZipPath = Get-SevenZip -DownloadDirectory $TempDirectory -WorkingDirectory $TempDirectory # Will create new tempfolder as subfolder of current $TempDirectory
+					}
+				}
+				&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" | Out-Verbose # Extract .tar.xz
+				Remove-Item -LiteralPath $DownloadFullName
+				if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
+				$FileSystemArchiveFullName = Join-Path $TempDirectory ([System.IO.Path]::GetFileNameWithoutExtension($DownloadFullName))
 			} else {
 				# Assume it is a root filesystem archive that can be imported directly!
 				$FileSystemArchiveFullName = $DownloadFullName
@@ -1742,6 +1838,7 @@ function New-Distro
 				#$Destination = Get-Directory -Path $Destination -Create
 				# TODO: The following import command fails with "The system cannot find the path specified."
 				#       if the parent of $Destination does not exist.
+				Write-Verbose "Running: wsl.exe --import ${Name} ${Destination} ${FileSystemArchiveFullName}"
 				wsl.exe --import $Name $Destination $FileSystemArchiveFullName
 				Remove-Item -LiteralPath $FileSystemArchiveFullName
 				if ($LastExitCode -ne 0) {
@@ -1775,10 +1872,11 @@ function New-Distro
 						# Note: Not assuming internet connection, because we may have to install VPNKit
 						# first, so will only rely on preinstalled utilities from the distros!
 						$UserCreated = $false
-						if ($DistroImage.Id -like 'fedora-container-minimal-*') {
-							# Fedora minimal image have no preinstalled commands to manage users,
-							# since version 35 removed shadow-utils package from the image, so
-							# we handle this entirely by manipulating the configuration files manually.
+						if ($DistroImage.Id -like 'fedora-container-minimal-*' -or
+							$DistroImage.Id -eq 'rocky-container-minimal') {
+							# Fedora and Rocky minimal images have no preinstalled commands to manage users
+							# (for Fedora since version 35 removed shadow-utils package from the image),
+							# so we handle this entirely by manipulating the configuration files manually.
 							Write-Host "Creating user '$($User.UserName)' as member of wheel group..."
 							wsl.exe --distribution $Name --exec sh -c "echo \`"$($User.UserName):x:1000:1000::/home/$($User.UserName):/bin/bash\`" >> /etc/passwd"
 							if ($LastExitCode -eq 0) {
@@ -1871,9 +1969,11 @@ function New-Distro
 									Write-Warning "Failed to create user (error code ${LastExitCode})"
 								}
 							}
-							elseif ($DistroImage.Id -eq 'archlinux-bootstrap' -or
+							elseif ($DistroImage.Id -in ('archlinux-bootstrap', 'clearlinux-container-base') -or
+									$DistroImage.Id -like 'void-*' -or
+									$DistroImage.Id -like 'rocky-container-*' -or
 									$DistroImage.Id -like 'fedora-container-*') {
-								# Arch and Fedora.
+								# Arch, Void, Clear, Rocky and Fedora.
 								# Add user with required non-empty password. Use low-level command 'useradd',
 								# since 'adduser' is not built-in. Make it a member of group "wheel".
 								Write-Host "Creating user '$($User.UserName)' as member of wheel group..."

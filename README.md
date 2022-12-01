@@ -102,8 +102,8 @@ of the same image (e.g. multiple Debian instances), as long as you give them
 a unique name and disk file location.
 
 The installation method of importing the root filesystem archive, are also
-used to include support for some additional images. The official Alpine
-"minimal root filesystem" archives are published on
+used to include support for some additional images. For example the official
+Alpine "minimal root filesystem" archives are published on
 [alpinelinux.org](https://alpinelinux.org/downloads/), and Arch Linux
 "bootstrap" distributions on [archlinux.org](https://archive.archlinux.org/iso/).
 Both of these are supported by the PowerShell script; it will download the
@@ -193,11 +193,15 @@ Currently supported linux distributions (and tested versions):
 - Alpine (tested version 3.13.1)
 - Arch (tested version 2021.02.01)
 - Fedora (tested release versions 34, 35, 36 and development versions 37 and 38 (current Rawhide), both standard and minimal base images. Note that Fedora 35 does not mount /mnt/c properly, which also means Install-VpnKit will not work out of the box.
+- Void Linux (Install-VpnKit not supported yet)
+- Clear Linux OS (Install-VpnKit not supported yet)
+- Rocky Linux (Install-VpnKit not supported yet)
 
-Note that the Alpine, Arch and Fedora distributions listed above are not regular WSL images.
-Alpine is the official "minimal root filesystem" distribution from alpinelinux.org,
-and Arch is the official bootstrap distribution archlinux.org. Fedora is the
-root filesystem taken from the official Docker container image.
+Note that the Alpine, Arch, Fedora, Void, Clear and Rocky distributions listed above
+are not regular WSL images. Alpine, Arch and Void are official root filesystem
+distributions (Alpine calls it "minimal root filesystem", Arch calls it "bootstrap").
+Fedora, Clear and Rocky are the root filesystem taken from the official Docker container
+images.
 
 ### Linux configuration
 
@@ -226,27 +230,33 @@ comments in the script header for more details. To upgrade to latest stable vers
 of Debian, just run the script without arguments: `/mnt/c/Wsl/debian-upgrade`.
 See also example [below](#debian).
 
-The Alpine, Arch and Fedora images are not WSL images, but official plain root filsystem
-image distributions. These will always be installed from the latest released
-version, but will generally have less initial configuration than the WSL images. If
-using the Arch Linux image there are quite a few steps that needs to be performed before
-being able to start using `pacman` to install additional software. The supplied
-script `arch-setup` will perform the required steps for you (read the comments for
-description of what it does), just run the script without arguments:
-`/mnt/c/Wsl/arch-setup`. See also example [below](#arch). There are also different
-types of setup scripts for setting up other distributions, see [below](#setting-up-the-wsl-distribution).
+The Alpine, Arch, Fedora, Void, Clear and Rocky images are not WSL images, but official
+plain root filsystem image distributions. These will always be installed from the latest
+released version, but will generally have less initial configuration than the WSL images.
+This is mostly true for the Arch Linux image, where there are quite a few steps that needs
+to be performed before being able to start using `pacman` to install additional software.
+The supplied script `arch-setup` will perform the required steps for you (read the comments
+for description of what it does), just run the script without arguments:
+`/mnt/c/Wsl/arch-setup`. See also example [below](#arch). Other images, such as Alpine,
+Void, Clear and Rocky, require little or no initial configuration before being taken into
+regular use. 
 
-The script `arch-install-dev-cpp-python-qt` can be executed after `arch-setup` to install
-a set of packages relevant for a specific C++, Python and Qt development environment,
-including: Git (with LFS), SSL, SSH, GCC, CMake, Ninja, Qt5, Python (with numpy, pylint,
-pytest, pyside2 and ipython).
+In addition to the mentioned Arch Linux setup script, there are also some additional
+convenience scripts for typical, but not necessarily required, set-up tasks. Such as
+for upgrading Debian and Fedora to latest version, or to install bash and some other
+relevant core tools. See [below](#setting-up-the-wsl-distribution).
 
-Alternatively, the script `arch-install-dev-go` can be to install a set of packages
-relevant for a different development environment, namely Go (golang), including gcc
-to be able to compile cgo-based packages. It does not install additional Go related
-support tools (such as delve, guru, goimports), since not all are available as
-pacman packages, and also they can easily be installed from VSCode when using WSL remoting,
-or with "go get" command.
+For Arch there are also some even higher level setup scripts, which can be used to
+quickly set up a development environment. The script `arch-install-dev-cpp-python-qt`
+can be executed after `arch-setup` to install a set of packages relevant for a specific
+C++, Python and Qt development environment, including:
+Git (with LFS), SSL, SSH, GCC, CMake, Ninja, Qt5, Python (with numpy, pylint,
+pytest, pyside2 and ipython). Alternatively, the script `arch-install-dev-go` can be to
+install a set of packages relevant for a different development environment, namely
+Go (golang), including gcc to be able to compile cgo-based packages. It does not install
+additional Go related support tools (such as delve, guru, goimports), since not all are
+available as pacman packages, and also they can easily be installed from VSCode when
+using WSL remoting, or with "go get" command.
 
 The script `ssh-init` is a script for initializing SSH agent for a shell session.
 It starts an ssh-agent process, if not already running, and adds all identities found
