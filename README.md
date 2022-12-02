@@ -172,14 +172,15 @@ See the [VPNKit manual install](#vpnkit-manual-install) section below for detail
 #### Docker
 
 If you have Docker Desktop installed, it will include its own copy of the
-same `vpnkit.exe` as used by the `wsl-vpnkit` system. Upon start/stop it will
-terminate any running `vpnkit.exe` processes, which means it would also terminate
-such a process started by `wsl-vpnkit`, and it would have to be restarted it to
-get it to work again. The workaround for this, as in the original
+same vpnkit tool (`com.docker.vpnkit.exe`, previously `vpnkit.exe`) used
+by the `wsl-vpnkit` system. Upon start/stop it will terminate any running
+processes with same name, which means it would also terminate such a process
+started by `wsl-vpnkit`, and it would have to be restarted it to get it to
+work again. The workaround for this, as in the original
 [github.com/sakai135/wsl-vpnkit](https://github.com/sakai135/wsl-vpnkit),
-is to rename the copy of `vpnkit.exe` used for WSL into `wsl-vpnkit.exe`.
-This is done in the installation performed by the `Wsl.ps1`, functions
-`New-VpnKit` and `Install-VpnKit`.
+is to rename the copy used for WSL into `wsl-vpnkit.exe`. This is automatically
+done by the installation performed by the `Wsl.ps1`,
+functions `New-VpnKit` and `Install-VpnKit`.
 
 ### Linux distributions
 
@@ -193,15 +194,35 @@ Currently supported linux distributions (and tested versions):
 - Alpine (tested version 3.13.1)
 - Arch (tested version 2021.02.01)
 - Fedora (tested release versions 34, 35, 36 and development versions 37 and 38 (current Rawhide), both standard and minimal base images. Note that Fedora 35 does not mount /mnt/c properly, which also means Install-VpnKit will not work out of the box.
+- Rocky Linux (Install-VpnKit not supported yet, does not mount /mnt/c without first installing package util-linux, or util-linux-core)
 - Void Linux (Install-VpnKit not supported yet)
 - Clear Linux OS (Install-VpnKit not supported yet)
-- Rocky Linux (Install-VpnKit not supported yet)
 
 Note that the Alpine, Arch, Fedora, Void, Clear and Rocky distributions listed above
 are not regular WSL images. Alpine, Arch and Void are official root filesystem
 distributions (Alpine calls it "minimal root filesystem", Arch calls it "bootstrap").
 Fedora, Clear and Rocky are the root filesystem taken from the official Docker container
-images.
+images. Not all of them have been properly tested in a WSL setup, and may
+therefore lack something, typically not automatically mounting the host
+drives (e.g. /mnt/c). Alpine and Arch are the most safe choices of them,
+in addition to the more official WSL distros in the above list, where
+Ubuntu and Debian are the ones I've tested most.
+
+Note also that not all distributions listed above support the full VPNKit
+installation, as done by function `Install-VpnKit`, and described above.
+This function assumes the distro have no network connection, and must
+download any packages required by the VPNKit setup on the host and install
+in distro from file. This must be implemented for each specific distro, at
+least for specific distro built-in package managers, and this is something
+I might not yet have done even though I've added basic support for downloading
+and installing the distro. What you can do is to install a base distro known
+to work with VPNKit, which includes Alpine, Arch, Ubuntu and Debian, and
+install the full VPNKit setup in this. Then, if you want to use a different
+distro, such as Rocky Linux, you can just do some simple DNS configuration for
+it to be able to have network access through the VPNKit setup running in
+the other running distro.
+See [Creating additional distribution](#creating-additional-distribution)
+for more details.
 
 ### Linux configuration
 
@@ -609,36 +630,41 @@ on the host, and with some more detail:
     or create a symbolic link in such a location pointing to the real location, it being
     in WSL or even host's filesystem, you can run the script like this:
     `VPNKIT_NPIPERELAY_PATH=npiperelay.exe wsl-vpnkit`.
-- Get the executables `vpnkit.exe` and `vpnkit-tap-vsockd` from
+- Get the executables `com.docker.vpnkit.exe` (previously just `vpnkit.exe`) and `vpnkit-tap-vsockd` from
   [Docker Desktop](https://hub.docker.com/editions/community/docker-ce-desktop-windows/).
    - If you do not have Docker Desktop already installed, instead of installing it just
      to get a hold on these files, you can download the installer and extract it
      with [7-Zip](https://www.7-zip.org/) - first extract the installer exe, and
-     then from the extracted folder extract once more the `resources/wsl/docker-for-wsl.iso`
-     file, and you should find the two executables for easy copy-install. For example,
+     then from the extracted folder extract once more the `resources\services.tar`
+     (previously `resources/wsl/docker-for-wsl.iso`) file, and you should find the
+     two executables for easy copy-install. For example,
      to install them into C:\bin execute something like this from a PowerShell prompt:
-     ```
+     ```powershell
      Start-BitsTransfer "https://desktop.docker.com/win/stable/Docker Desktop Installer.exe"
-     7z x "Docker Desktop Installer.exe" resources\vpnkit.exe resources\wsl\docker-for-wsl.iso
-     7z x resources\wsl\docker-for-wsl.iso containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd
-     New-Item -ItemType Directory -Path C:\bin
-     Move-Item "resources\vpnkit.exe" C:\bin
-     Move-Item "containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd" C:\bin
+     7z e -y -oC:\bin "Docker Desktop Installer.exe" resources\com.docker.vpnkit.exe resources\services.tar
+     7z e -y -oC:\bin C:\bin\services.tar containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd
      ```
-   - Note: If you are using Docker Desktop on the host computer, it will executing its
-     own vpnkit.exe, and upon start/stop it will terminate any running `vpnkit.exe` processes.
-     This means it would also terminate such a process started by `wsl-vpnkit`, and it
-     would have to be restarted it to get it to work again. The workaround for this
-     is to rename the copy of `vpnkit.exe` used for WSL into somethine else, e.g. `wsl-vpnkit.exe`.
+   - Rename the executable `com.docker.vpnkit.exe` to `wsl-vpnkit.exe`.
+     ```powershell
+     Rename-Item C:\bin\com.docker.vpnkit.exe wsl-vpnkit.exze
+     ```
+     The reason for this is that if you are using Docker Desktop on the host computer,
+     it will be executing its own `com.docker.vpnkit.exe`, and upon start/stop it will
+     terminate any running processes with that name. This means it would also terminate
+     such a process started by `wsl-vpnkit`, and it would have to be restarted to get
+     it to work again. The workaround for this is to rename the copy of executable
+     used for WSL into somethine else. The `wsl-vpnkit` script assumes `wsl-vpnkit.exe`,
+     but you can also use a different name if you configure it with `VPNKIT_PATH` (see below).
 - Copy the `vpnkit-tap-vsockd` executable into into the WSL filesystem. Note that
   it must be put into `/sbin` and owned by root. For example, from within WSL prompt:
   ```
   sudo cp /mnt/c/bin/vpnkit-tap-vsockd /sbin/vpnkit-tap-vsockd
   chown root:root /sbin/vpnkit-tap-vsockd
   ```
-- Make the `vpnkit.exe` executable accessible from the `wsl-vpnkit` script, just as
+- Make the `wsl-vpnkit.exe` executable accessible from the `wsl-vpnkit` script, just as
   with `npiperelay.exe` described above, but now with script variable `VPNKIT_PATH`.
-  If the executable was renamed, e.g. to `wsl-vpnkit.exe`, then this must also be considered.
+  If the executable was renamed to something other than `wsl-vpnkit.exe`, then this
+  must also be considered.
 - Configure DNS as described in the [VPNKit manual configuration](#vpnkit-manual-configuration)
   section, below.
 - Finally, run the `wsl-vpnkit` script from the WSL distro to start the network services,

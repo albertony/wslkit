@@ -2322,12 +2322,12 @@ function Start-Distro
 		# Begin by starting VPNKit as root in a new window (copied parts of code from Start-VpnKit)
 		if (-not $PSCmdlet.ShouldProcess("/usr/local/bin/wsl-vpnkit", "Run wsl-vpnkit as root")) { return }
 		# Check if already running and suggest stopping.
-		# Note: Docker Desktop is also executing its own vpnkit.exe so must not touch those!
-		# Previously avoided this by filtering processes on command line containing the named pipe,
-		# assuming default name used by wsl-vpnkit script:
-		#   | Where-Object -Property CommandLine -like "*\\.\pipe\wsl-vpnkit*" # Note: Additional 
-		# But later changed to renaming our own vpnkit.exe into wsl-vpnkit.exe because Docker Desktop
-		# will also kill any vpnkit.exe processes!
+		# Note: Docker Desktop is also executing its own com.docker.vpnkit.exe (previously vpnkit.exe)
+		# so must not touch those! Previously avoided this by filtering processes on command line
+		# containing the named pipe, assuming default name used by wsl-vpnkit script:
+		#   | Where-Object -Property CommandLine -like "*\\.\pipe\wsl-vpnkit*"
+		# But later changed to renaming our own com.docker.vpnkit.exe (vpnkit.exe) into wsl-vpnkit.exe
+		# because Docker Desktop will also kill any com.docker.vpnkit.exe (vpnkit.exe) processes!
 		$VpnKitProcesses = Get-Process -Name 'wsl-vpnkit' -ErrorAction Ignore
 		if ($VpnKitProcesses) {
 			if ($PSCmdlet.ShouldContinue("There are $($VpnKitProcesses.Count) wsl-vpnkit process(es) already running. You can only run one VPNKit service`nat a time, and if you want to start a different one you should manually stop the existing.`nIf you think it is just stray wsl-vpnkit processes then terminating them is OK.`nDo you want to terminate existing wsl-vpnkit process(es)?`n$($VpnKitProcesses.Path -join '`n')", "Stop wsl-vpnkit.exe")) {
@@ -2527,7 +2527,7 @@ function New-VpnKit
 		}
 
 		#
-		# vpnkit.exe and vpnkit-tap-vsockd from Docker Desktop installer
+		# com.docker.vpnkit.exe and vpnkit-tap-vsockd from Docker Desktop installer
 		#
 
 		if ($PSCmdlet.ShouldProcess("VPNKit from Docker Desktop", "Download and extract"))
@@ -2540,16 +2540,16 @@ function New-VpnKit
 			$DownloadUrl = "https://desktop.docker.com/win/stable/${DownloadName}" # Redirects to "https://desktop.docker.com/win/main/amd64/Docker Desktop Installer.exe"
 			Save-File -Url $DownloadUrl -Path $DownloadFullName
 			if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
-			# Extract vpnkit.exe executable and docker-for-wsl.iso from installer into temp
-			Write-Verbose "Extracting 'vpnkit.exe' and 'docker-for-wsl.iso' from '${DownloadName}'"
-			&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" 'resources\vpnkit.exe' 'resources\wsl\docker-for-wsl.iso' | Out-Verbose
+			# Extract com.docker.vpnkit.exe (previously vpnkit.exe) executable and services.tar from installer into temp
+			Write-Verbose "Extracting 'com.docker.vpnkit.exe' and 'services.tar' from '${DownloadName}'"
+			&$SevenZipPath e -y "-o${TempDirectory}" "${DownloadFullName}" 'resources\com.docker.vpnkit.exe' 'resources\services.tar' | Out-Verbose
 			Remove-Item -LiteralPath $DownloadFullName
 			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
-			# Rename vpnkit.exe to wsl-vpnkit.exe, to avoid interference with Docker for Windows: It will look for any process named vpnkit.exe and kill it when it starts.
-			Rename-Item (Join-Path $TempDirectory 'vpnkit.exe') 'wsl-vpnkit.exe'
-			# Extract vpnkit-tap-vsockd executable from docker-for-wsl.iso into temp
-			Write-Verbose "Extracting 'vpnkit-tap-vsockd' from 'docker-for-wsl.iso'"
-			$DownloadFullName = (Join-Path $TempDirectory 'docker-for-wsl.iso')
+			# Rename com.docker.vpnkit.exe to wsl-vpnkit.exe, to avoid interference with Docker for Windows: It will look for any process with that name and kill it when it starts.
+			Rename-Item (Join-Path $TempDirectory 'com.docker.vpnkit.exe') 'wsl-vpnkit.exe'
+			# Extract vpnkit-tap-vsockd executable from services.tar into temp
+			Write-Verbose "Extracting 'vpnkit-tap-vsockd' from 'services.tar'"
+			$DownloadFullName = (Join-Path $TempDirectory 'services.tar')
 			&$SevenZipPath e -y "-o${TempDirectory}" $DownloadFullName 'containers\services\vpnkit-tap-vsockd\lower\sbin\vpnkit-tap-vsockd' | Out-Verbose
 			Remove-Item -LiteralPath $DownloadFullName
 			if ($LastExitCode -ne 0) { throw "Extraction of ${DownloadFullName} failed with error $LastExitCode" }
@@ -2949,11 +2949,11 @@ function Install-VpnKit
 	if ($InstructionsOnly)
 	{
 		# Print instructions only
-		# Note: Printing Linux shell commands, but could also be prefixed with wsl.exe for execution directly from host shell.
-		Write-Host "To install VPNKit you must execute the following (as root) from a WSL2 prompt, or prefixed with wsl.exe in a console on host:"
-		Write-Host
 		if (-not $ConfigurationOnly)
 		{
+			# Note: Printing Linux shell commands, but could also be prefixed with wsl.exe for execution directly from host shell.
+			Write-Host "To install VPNKit you must execute the following (as root) from a WSL2 prompt, or prefixed with wsl.exe in a console on host:"
+			Write-Host
 			Write-Host "cp `"${ProgramDirectoryWslMount}/wsl-vpnkit`" /usr/local/bin/"
 			Write-Host "cp `"${ProgramDirectoryWslMount}/vpnkit-tap-vsockd`" /sbin/" # Note: This one goes into the standard directory for root programs
 			Write-Host "chown root:root /sbin/vpnkit-tap-vsockd"
@@ -2962,12 +2962,42 @@ function Install-VpnKit
 			#$DestinationVpnKitExe = (Join-Path $Destination 'wsl-vpnkit.exe').Replace('\','\/')
 			#Write-Host "sed -i 's/VPNKIT_PATH=.*/VPNKIT_PATH=${DestinationVpnKitExe}/' /usr/local/bin/wsl-vpnkit.exe"
 			#Write-Host "sed -i 's/VPNKIT_NPIPERELAY_PATH=.*/VPNKIT_NPIPERELAY_PATH=${DestinationVpnKitExe}/' /usr/local/bin/npiperelay.exe"
+			Write-Host
 		}
-		else
+		# Note: Printing Linux shell commands, but could also be prefixed with wsl.exe for execution directly from host shell.
+		Write-Host "To configure VPNKit you must execute the following (as root) from a WSL2 prompt, or prefixed with wsl.exe in a console on host, assuming you not already have a /etc/wsl.conf file with content you would want to keep:"
+		Write-Host
+		Write-Host "cp `"${ProgramDirectoryWslMount}/resolv.conf`" /etc/"
+		Write-Host "cp `"${ProgramDirectoryWslMount}/wsl.conf`" /etc/"
+		Write-Host
+		# Sometimes the automatic mounting of host drives does not work, and then one can copy from the host into
+		# the distro using the network redirect available at \\wsl$.
+		# TODO: No, this gives access denied, probably because the /etc needs root privileges!?
+		#Write-Host "Or, for example if the host drive mount is not working, you can instead copy from the host into the distro:"
+		#Write-Host
+		#Write-Host "Copy-Item '${ProgramDirectory}\resolv.conf' '\\wsl$\${Name}\etc'"
+		#Write-Host "Copy-Item '${ProgramDirectory}\wsl.conf' '\\wsl$\${Name}\etc'"
+		#Write-Host
+		Write-Host "Or, for example if the host drive mount is not working, you can instead configure VPNKit by copying the following commands into a WSL2 prompt where you are root:"
+		Write-Host
+		Write-Host "echo `"$((Get-Content -LiteralPath ${ProgramDirectory}\resolv.conf -Raw).Trim())`" > /etc/resolv.conf"
+		Write-Host
+		Write-Host "echo `"$((Get-Content -LiteralPath ${ProgramDirectory}\wsl.conf -Raw).Trim())`" > /etc/wsl.conf"
+		Write-Host
+		Write-Host "If you should wish to unconfigure VPNKit at some point, you can do that by copying the following commands into a WSL2 prompt where you are root, assuming you have not added anything (unrelated to VPNKit) in /etc/wsl.conf you would want to keep:"
+		Write-Host
+		Write-Host "rm /etc/resolv.conf"
+		Write-Host "rm /etc/wsl.conf"
+		Write-Host
+		if (-not $ConfigurationOnly)
 		{
-			Write-Host "cp `"${ProgramDirectoryWslMount}/resolv.conf`" /etc/"
-			Write-Host "cp `"${ProgramDirectoryWslMount}/wsl.conf`" /etc/"
+			Write-Host "If you wish to uninstall VPNKit at some point, you can do that by copying the following commands into a WSL2 prompt where you are root:"
+			Write-Host
+			Write-Host "rm /sbin/vpnkit-tap-vsockd"
+			Write-Host "rm /usr/local/bin/wsl-vpnkit"
+			Write-Host
 		}
+		Write-Warning "To be sure that the DNS configuration changes are not lost, due to WSL overwriting the configuration file '/etc/resolv.conf' with a default version, you should shutdown WSL immediately with 'wsl.exe --shutdown' after performing the above steps. This will terminate all running distributions as well as the shared virtual machine."
 		Write-Host
 	}
 	else
@@ -3203,52 +3233,68 @@ function Install-VpnKit
 						}
 					}
 				}
-			} elseif ($DistroInfo.Id -eq 'fedora') {
-				# Fedora is missing socat, and also iproute with dependencies psmisc og libmnl, required by the shell scripts.
+			} elseif ($DistroInfo.Id -in ('fedora', '"rocky"')) { # Note, Rocky id is in double quotes!
+				# Fedora and Rocky are missing socat, and also iproute with dependencies, required by the shell scripts.
 				$SocatStatus = wsl.exe @WslOptions rpm --query socat
 				if ($LastExitCode -eq 0) {
 					Write-Verbose "Skipping installation of package 'socat' because it is already present: ${SocatStatus}"
 				} else {
-					# Note: Release versions and development versions are at separate paths. Development version is typically the Rawhide,
-					# which we could detect by testing $DistroInfo.VersionCodeName -eq 'rawhide', but there may also be other numerically
-					# named development versions. Therefore we simply test if the version code name is valid as part of a release url,
-					# and if not use a development url!
-					# 
-					$DownloadBaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/releases/$($DistroInfo.VersionCodeName)/Everything/x86_64/os/Packages/"
-					try
-					{
-						Invoke-RestMethod -Uri $DownloadBaseUrl -UseBasicParsing -DisableKeepAlive -Method Head | Out-Null
-					}
-					catch
-					{
-						$DownloadBaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/development/$($DistroInfo.VersionCodeName)/Everything/x86_64/os/Packages/"
+					if ($DistroInfo.Id -eq 'fedora') {
+						# Note: Release versions and development versions are at separate paths. Development version is typically the Rawhide,
+						# which we could detect by testing $DistroInfo.VersionCodeName -eq 'rawhide', but there may also be other numerically
+						# named development versions. Therefore we simply test if the version code name is valid as part of a release url,
+						# and if not use a development url!
+						$DownloadBaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/releases/$($DistroInfo.VersionCodeName)/"
+						try
+						{
+							Invoke-RestMethod -Uri $DownloadBaseUrl -UseBasicParsing -DisableKeepAlive -Method Head | Out-Null
+						}
+						catch
+						{
+							$DownloadBaseUrl = "https://dl.fedoraproject.org/pub/fedora/linux/development/$($DistroInfo.VersionCodeName)/"
+						}
+					} else {
+						$DownloadBaseUrl = "https://dl.rockylinux.org/pub/rocky/$($DistroInfo.Version)/"
 					}
 					$WorkingDirectory = Get-Directory -Path $WorkingDirectory -Create
 					$TempDirectory = New-TempDirectory -Path $WorkingDirectory
 					try
 					{
-						$Packages = 'socat', 'psmisc', 'libmnl', 'iproute'
-						$LibelfStatus = wsl.exe @WslOptions rpm --query elfutils-libelf
-						if ($LastExitCode -eq 0) {
-							Write-Verbose "Skipping installation of package 'elfutils-libelf' because it is already present: ${LibelfStatus}"
-						} else {
-							# The minimal base image does not include elfutils libraries, which are required by iproute!
-							$Packages += 'elfutils-default-yama-scope', 'elfutils-libs', 'elfutils-libelf'
+						$Packages = @(
+							@{ Name = 'socat'; Repository = if($DistroInfo.Id -eq 'fedora'){'Everything'}else{'AppStream'} },
+							@{ Name = 'psmisc'; Repository = if($DistroInfo.Id -eq 'fedora'){'Everything'}else{'BaseOS'} },
+							@{ Name = 'libmnl'; Repository = if($DistroInfo.Id -eq 'fedora'){'Everything'}else{'BaseOS'} },
+							@{ Name = 'libbpf'; Repository = if($DistroInfo.Id -eq 'fedora'){'Everything'}else{'BaseOS'} },
+							@{ Name = 'iproute'; Repository = if($DistroInfo.Id -eq 'fedora'){'Everything'}else{'BaseOS'} }
+						)
+						# The Rocky base and minimal images, and the Fedora minimal image, do not
+						# include packages libdb and elfutils-libelf, which are dependencies of iproute.
+						$ConditionalPackages = @(
+							@{ Name = 'libdb'; Repository = if($DistroInfo.Id -eq 'fedora'){'Everything'}else{'BaseOS'} },
+							@{ Name = 'elfutils-libelf'; Repository = if($DistroInfo.Id -eq 'fedora'){'Everything'}else{'BaseOS'} }
+						)
+						foreach ($Package in $ConditionalPackages) {
+							$PackageStatus = wsl.exe @WslOptions rpm --query $Package.Name
+							if ($LastExitCode -eq 0) {
+								Write-Verbose "Skipping installation of package '$($Package.Name)' because it is already present: ${PackageStatus}"
+							} else {
+								$Packages += $Package
+							}
 						}
 						# Downloading all first, then installing in a single command
-						Write-Host "Downloading packages '$($Packages -join `"', '`")'..."
+						Write-Host "Downloading packages '$($Packages.Name -join `"', '`")'..."
 						$PackageDownloadNames = @()
 						foreach ($Package in $Packages) {
-							$DownloadUrl = "${DownloadBaseUrl}$($Package[0])/"
-							$DownloadName = Invoke-WebRequest -Uri $DownloadUrl -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "^${Package}-\d.*\.x86_64\.rpm$" -or $_ -match "^${Package}-\d.*\.noarch\.rpm$"} | Select-Object -First 1 # Pick first with a version number, prefer x86_64 with fallback to noarch, skip "-devel", "-static" or other variants
+							$DownloadUrl = "${DownloadBaseUrl}$($Package.Repository)/x86_64/os/Packages/$($Package.Name[0])/"
+							$DownloadName = Invoke-WebRequest -Uri $DownloadUrl -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "^$($Package.Name)-\d.*\.x86_64\.rpm$" -or $_ -match "^$($Package.Name)-\d.*\.noarch\.rpm$"} | Select-Object -First 1 # Pick first with a version number, prefer x86_64 with fallback to noarch, skip "-devel", "-static" or other variants
 							$DownloadUrl += $DownloadName
 							if (-not $DownloadName) {
-								Write-Warning "Unable to download package '${Package}', you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
+								Write-Warning "Unable to download package '$($Package.Name)', you must manually ensure required packages '$($Packages.Name -join `"', '`")' gets installed"
 							} else {
 								$DownloadFullName = Join-Path $TempDirectory $DownloadName
 								Save-File -Url "${DownloadUrl}" -Path $DownloadFullName
 								if (-not (Test-Path -LiteralPath $DownloadFullName)) {
-									Write-Warning "Failed to download package '${Package}', you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
+									Write-Warning "Failed to download package '$($Package.Name)', you must manually ensure required packages '$($Packages.Name -join `"', '`")' gets installed"
 									break
 								}
 								$PackageDownloadNames += $DownloadName
@@ -3257,14 +3303,14 @@ function Install-VpnKit
 						if ($Packages.Count -eq $PackageDownloadNames.Count) { # If some of them failed to be downloaded, don't even try!
 							$TempDirectoryRoot = [System.IO.Path]::GetPathRoot($TempDirectory)
 							$TempDirectoryWslMount = "/mnt/$($TempDirectory.Replace($TempDirectoryRoot, $TempDirectoryRoot.ToLower().Replace(':','')).Replace('\','/'))"
-							Write-Host "Installing packages '$($Packages -join `"', '`")'..."
+							Write-Host "Installing packages '$($Packages.Name -join `"', '`")'..."
 							$Commands = 'rpm', '--install'
 							foreach($PackageDownloadName in $PackageDownloadNames) {
 								$Commands += "${TempDirectoryWslMount}/${PackageDownloadName}"
 							}
 							wsl.exe @WslOptions --user root @Commands | Out-Verbose
 							if ($LastExitCode -ne 0) {
-								Write-Warning "Failed to install packages (error code ${LastExitCode}), you must manually ensure required packages '$($Packages -join `"', '`")' gets installed"
+								Write-Warning "Failed to install packages (error code ${LastExitCode}), you must manually ensure required packages '$($Packages.Name -join `"', '`")' gets installed"
 								break
 							}
 						}
@@ -3323,7 +3369,7 @@ function Install-VpnKit
 				Write-Warning "Shutdown failed (error code ${LastExitCode})"
 			}
 		}
-		Write-Warning "To be sure that the DNS configuration changes are not lost, due to WSL overwriting the configuration file '/etc/resolv.conf' with a default version, you should shutdown WSL immediately with 'wsl.exe --shutdown'."
+		Write-Warning "To be sure that the DNS configuration changes are not lost, due to WSL overwriting the configuration file '/etc/resolv.conf' with a default version, you should shutdown WSL immediately with 'wsl.exe --shutdown'. This will terminate all running distributions as well as the shared virtual machine."
 	}
 }
 
@@ -3460,12 +3506,12 @@ function Start-VpnKit
 	$DistroInfo = Get-DistroSystemInfo -Name $Name
 	if (-not $PSCmdlet.ShouldProcess("/usr/local/bin/wsl-vpnkit", "Run wsl-vpnkit as root from WSL distro '$(if($Name){$Name}else{'(default)'})' [$($DistroInfo.ShortName)]")) { return }
 	# Check if already running and suggest stopping.
-	# Note: Docker Desktop is also executing its own vpnkit.exe so must not touch those!
-	# Previously avoided this by filtering processes on command line containing the named pipe,
-	# assuming default name used by wsl-vpnkit script:
-	#   | Where-Object -Property CommandLine -like "*\\.\pipe\wsl-vpnkit*" # Note: Additional 
+	# Note: Docker Desktop is also executing its own com.docker.vpnkit.exe (previously vpnkit.exe)
+	# so must not touch those! Previously avoided this by filtering processes on command line
+	# containing the named pipe, assuming default name used by wsl-vpnkit script:
+	#   | Where-Object -Property CommandLine -like "*\\.\pipe\wsl-vpnkit*"
 	# But later changed to renaming our own vpnkit.exe into wsl-vpnkit.exe because Docker Desktop
-	# will also kill any vpnkit.exe processes!
+	# will also kill any com.docker.vpnkit.exe (vpnkit.exe) processes!
 	# Note: Even if killing wsl-vpnkit.exe on host, if the existing wsl-vpnkit process was started
 	# from a wsl-vpnkit script in the same distro, then it will still fail with socat socket already
 	# exists etc! But sometimes it is just a stray vpnkit process, and then killing it automatically
