@@ -1552,7 +1552,7 @@ function Get-DistroSystemInfo
 	$DistroInfoText = wsl.exe @WslOptions --exec cat /etc/os-release
 	if ($LastExitCode -ne 0) { throw "Failed to retrieve info from distro (error code ${LastExitCode})" }
 	$DistroInfo = [PSCustomObject]@{
-		Id = $DistroInfoText | Select-String -Pattern '^ID=(.*)' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+		Id = $DistroInfoText | Select-String -Pattern '^ID="?(.*?)"?$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value # Void Linux does have quotes
 		VersionId = $DistroInfoText | Select-String -Pattern '^(?:VERSION_ID|BUILD_ID)="?(.*?)"?$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value # Alpine 3.13.1 did not have quotes, Debian 9 did have quotes. Both have VERSION_ID. Arch have instead BUILD_ID=rolling.
 		Version = $null
 		VersionString = $DistroInfoText | Select-String -Pattern '^VERSION="?(.*?)"?$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
@@ -1612,7 +1612,17 @@ function Get-DistroSystemInfo
 	# TODO:
 	#  - Ubuntu also has a file /etc/debian_version, representing the Debian version it is built on. E.g. In Ubuntu 20.04 it contains "bullseye/sid",
 	#    which matches the content in latest testing version Debian.
-	$DistroInfo.ShortName = "$($DistroInfo.Id) $(if($DistroInfo.VersionString){$DistroInfo.VersionString}else{$DistroInfo.Version})"
+	#$DistroInfo.ShortName = "$($DistroInfo.Id) $(if($DistroInfo.VersionString){$DistroInfo.VersionString}else{$DistroInfo.Version})"
+	$DistroInfo.ShortName = $DistroInfo.Id
+	if ($DistroInfo.ShortName) {
+		if ($DistroInfo.VersionString) {
+			$DistroInfo.ShortName += " $($DistroInfo.VersionString)"
+		} elseif ($DistroInfo.Version) {
+			$DistroInfo.ShortName += " $($DistroInfo.Version)"
+		} elseif ($DistroInfo.VersionCodeName) {
+			$DistroInfo.ShortName += " $($DistroInfo.VersionCodeName)"
+		}
+	}
 	$DistroInfo
 }
 
@@ -3107,7 +3117,6 @@ function Install-VpnKit
 							Remove-Item -LiteralPath $DownloadFullName
 							if ($LastExitCode -ne 0) {
 								Write-Warning "Failed to install package 'socat' (error code ${LastExitCode}), you must manually ensure this required package gets installed"
-								break
 							}
 						}
 						finally
@@ -3314,6 +3323,46 @@ function Install-VpnKit
 								break
 							}
 						}
+					}
+					finally
+					{
+						if ($TempDirectory -and (Test-Path -LiteralPath $TempDirectory)) {
+							Remove-Item -LiteralPath $TempDirectory -Recurse
+						}
+					}
+				}
+			} elseif ($DistroInfo.Id -eq 'void') {
+				# Void linux root filesystem is missing socat, but nothing else.
+				$SocatStatus = wsl.exe @WslOptions xbps-query socat
+				if ($LastExitCode -eq 0) {
+					Write-Verbose "Skipping installation of package 'socat' because it is already present: ${SocatStatus}"
+				} else {
+					$WorkingDirectory = Get-Directory -Path $WorkingDirectory -Create
+					$TempDirectory = New-TempDirectory -Path $WorkingDirectory
+					try
+					{
+						$VersionInfo = Invoke-RestMethod https://raw.githubusercontent.com/void-linux/void-packages/master/srcpkgs/socat/template
+						$Version = $VersionInfo | Select-String -Pattern '(?m)^version=(.*)$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+						$Revision = $VersionInfo | Select-String -Pattern '(?m)^revision=(.*)$' | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
+						$Arch='x86_64'
+						$DownloadUrl = "https://repo-default.voidlinux.org/current/socat-${Version}_${Revision}.${Arch}.xbps"
+						$DownloadName = ([uri]$DownloadUrl).Segments[-1]
+						$DownloadFullName = Join-Path $TempDirectory $DownloadName
+						Save-File -Url $DownloadUrl -Path $DownloadFullName
+						if (-not (Test-Path -LiteralPath $DownloadFullName)) { throw "Cannot find download ${DownloadFullName}" }
+						$TempDirectoryRoot = [System.IO.Path]::GetPathRoot($TempDirectory)
+						$TempDirectoryWslMount = "/mnt/$($TempDirectory.Replace($TempDirectoryRoot, $TempDirectoryRoot.ToLower().Replace(':','')).Replace('\','/'))"
+						Write-Host "Installing package 'socat'"
+						wsl.exe @WslOptions --user root --exec xbps-rindex --add "${TempDirectoryWslMount}/${DownloadName}" | Out-Verbose
+						if ($LastExitCode -ne 0) {
+							Write-Warning "Failed to install package 'socat' (error code ${LastExitCode}), you must manually ensure this required package gets installed"
+						} else {
+							wsl.exe @WslOptions --user root --exec xbps-install --repository $TempDirectoryWslMount --yes socat | Out-Verbose
+							if ($LastExitCode -ne 0) {
+								Write-Warning "Failed to install package 'socat' (error code ${LastExitCode}), you must manually ensure this required package gets installed"
+							}
+						}
+						Remove-Item -LiteralPath $DownloadFullName
 					}
 					finally
 					{

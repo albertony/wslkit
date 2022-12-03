@@ -195,15 +195,16 @@ Currently supported linux distributions (and tested versions):
 - Arch (tested version 2021.02.01)
 - Fedora (tested release versions 34, 35, 36 and development versions 37 and 38 (current Rawhide), both standard and minimal base images. Note that Fedora 35 does not mount /mnt/c properly, which also means Install-VpnKit will not work out of the box.
 - Rocky Linux (Install-VpnKit not supported yet, does not mount /mnt/c without first installing package util-linux, or util-linux-core)
-- Void Linux (Install-VpnKit not supported yet)
+- Void Linux (tested version 20221001)
 - Clear Linux OS (Install-VpnKit not supported yet)
 
 Note that the Alpine, Arch, Fedora, Void, Clear and Rocky distributions listed above
 are not regular WSL images. Alpine, Arch and Void are official root filesystem
-distributions (Alpine calls it "minimal root filesystem", Arch calls it "bootstrap").
-Fedora, Clear and Rocky are the root filesystem taken from the official Docker container
-images. Not all of them have been properly tested in a WSL setup, and may
-therefore lack something, typically not automatically mounting the host
+distributions (Alpine calls it "minimal root filesystem", Arch calls it "bootstrap",
+Void calls it "rootfs tarball"). Fedora, Clear and Rocky are similar root filesystem
+packages, but taken from the official Docker container images, which may have some
+additional customizations. Not all of them have been properly tested in a WSL setup,
+and may therefore lack something, typically not automatically mounting the host
 drives (e.g. /mnt/c). Alpine and Arch are the most safe choices of them,
 in addition to the more official WSL distros in the above list, where
 Ubuntu and Debian are the ones I've tested most.
@@ -681,7 +682,7 @@ most distributions. In addition you may need some dependent packages that are
 also missing.
 
 Debian:
-- The official image being on "buster", you needed the following:
+- The official image being on "buster", you need the following package downloads:
     - [packages.debian.org/buster/amd64/libwrap0/download](https://packages.debian.org/buster/amd64/libwrap0/download)
     - [packages.debian.org/buster/amd64/libssl1.1/download](https://packages.debian.org/buster/amd64/libssl1.1/download)
     - [packages.debian.org/buster/amd64/socat/download](https://packages.debian.org/buster/amd64/socat/download)
@@ -699,20 +700,30 @@ Alpine:
   actually a WSL distribution at all, but works like a charm (except, older versions of
   the wsl-vpnkit script required bash and it is not included by default, but could easily
   be downloaded and installed same way as socat).
-- Downloads from [dl-cdn.alpinelinux.org/alpine/latest-stable/main/x86_64/](https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/x86_64/)
+- Package downloads from [dl-cdn.alpinelinux.org/alpine/latest-stable/main/x86_64/](https://dl-cdn.alpinelinux.org/alpine/latest-stable/main/x86_64/)
 - Packages needed: `ncurses-terminfo-base`, `ncurses-libs`, `readline`, `socat` (previuosly also bash).
 - Install with `apk add --quiet --repositories-file /dev/null <packagefiles>...`.
 
 Arch:
 - Tested the official "bootstrap" distribution from archlinux.org, so - same as with
   Alpine: This is a standard image and not a WSL image.
-- Downloads from [archive.archlinux.org/packages](https://archive.archlinux.org/packages)
+- Package downloads from [archive.archlinux.org/packages](https://archive.archlinux.org/packages)
 - Packages needed: `socat`, `iproute2` (optionally also `grep` and `sed`).
     - In contrast to most other distros, the basic utilities `ip` (from `iproute2`), `grep` and `sed`
       are not included by default in Arch. The main run script wsl-vpnkit requires the `ip` and `grep`
       commands, so these are required. The supplementary install/configure scripts used by
       the `Install-VpnKit` and `Uninstall-VpnKit` functions in `Wsl.ps1` also requires `sed`,
       but if just performing a minimal manual install it can be skipped.
+    - Install with command `pacman --upgrade --needed <packagefiles>...`
+
+Void:
+- Tested the official "rootfs tarball" distribution from voidlinux.org, so
+  (similar to Arch) not actually a WSL distribution.
+- Package downloads from [repo-default.voidlinux.org/current](https://repo-default.voidlinux.org/current)
+- Packages needed: `socat`.
+- Install with two commands:
+    - First the package must be registered in a local repository: `xbps-rindex --add <full_path_to_package_file>`
+    - Next, the package can be installed from the local repository: `xbps-install --repository <full_path_to_package_directory> <package_name>`
 
 ### VPNKit manual configuration
 
