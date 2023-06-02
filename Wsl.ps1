@@ -1500,13 +1500,13 @@ function Get-DistroImage
 	#		BaseUrl = "${BaseUrl}development/"
 	#	}
 	#)
-	$Versions = @(Invoke-WebRequest -Uri "${BaseUrl}development/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match '^(\d+|rawhide)/' } | ForEach-Object { $Matches[1] } | ForEach-Object {
+	$Versions = @((Invoke-WebRequest -Uri "${BaseUrl}development/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match '^(\d+|rawhide)/' } | ForEach-Object { $Matches[1] } | ForEach-Object {
 		@{
 			Development = $true
 			MajorVersion = (Get-Culture).TextInfo.ToTitleCase($_) # Make "rawhide" into "Rawhide"
 			BaseUrl = "${BaseUrl}development/"
 		}
-	}
+	})
 	$Versions += (Invoke-WebRequest -Uri "${BaseUrl}releases/" -UseBasicParsing -DisableKeepAlive).Links.href | Where-Object { $_ -match '^(\d+)/' } | ForEach-Object { [int] $Matches[1] } | Sort-Object -Descending | Select-Object -First 2 | ForEach-Object {
 		@{
 			MajorVersion = $_
