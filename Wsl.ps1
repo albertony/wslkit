@@ -100,10 +100,10 @@
 # that can be set in WSL configuration file /etc/wsl.conf, but these
 # are not managed here (except for options that can also be set in registry).
 # Note that the when accessing the registry, we are accessing settings
-# managed by the LxssManager service, which the wsl.exe command line utility
-# interfaces with. Luckily all changes seem to be reflected immediately,
-# no need to restart services etc to make wsl.exe in sync with changes we
-# do "behind the scenes" in registry.
+# managed by the WslService (formerly known as LxssManager) service,
+# which the wsl.exe command line utility interfaces with. Luckily all changes
+# seem to be reflected immediately, no need to restart services etc to make
+# wsl.exe in sync with changes we do "behind the scenes" in registry.
 # Some of the functions are:
 #   Get-Distro
 #   Get-DistroImage
@@ -681,7 +681,7 @@ function Set-DefaultDistro
 		[Alias("Distribution", "Distro")]
 		[string] $Name
 	)
-	# Note: This method updates registry directly, but can also use 'wsl.exe --set-default' which updates registry through the LxssManager service.
+	# Note: This method updates registry directly, but can also use 'wsl.exe --set-default' which updates registry through the WslService (formerly LxssManager) service.
 	$Item = GetDistroRegistryItem -Name $Name
 	if (-not $Item) {
 		throw "Unable to find distro with name ${Name} in registry" # Since the validation uses wsl.exe there can in theory be mismatch with what is in registry?
@@ -2396,6 +2396,7 @@ function Stop-Distro
 	}
 	else
 	{
+		$Name = GetDistroNameOrDefault -Name $Name
 		if ($PSCmdlet.ShouldProcess($(if($Name){$Name}else{'(default)'}), "Terminate WSL distro")) {
 			Write-Host "Terminating WSL distro '$(if($Name){$Name}else{'(default)'})'..."
 			$WslOptions = GetWslCommandDistroOptions -Name $Name
@@ -2408,19 +2409,20 @@ function Stop-Distro
 # .SYNOPSIS
 # Test if WSL is running.
 # .DESCRIPTION
-# This will check for any running instances of the "Microsoft Windows Subsystem for Linux Background Host"
-# process. Checking that process name, description and image path matches the WSL defaults.
-# This process will be automatically started by the "Microsoft Windows Subsystem for Linux Launcher"
-# application (wsl.exe) or the "LXSS Manager Service" (LxssManager) when needed, e.g. when starting
-# a distro (see Start-Distro), and stopped automatically or as a result of command "wsl.exe --shutdown"
-# as done by Stop-Wsl.
+# This will check for any running instances of the Windows Subsystem for Linux background host process.
+# Checking the process name (wslhost) and the description, accepting
+# "Microsoft Windows Subsystem for Linux Background Host" used by the older Windows bundled
+# version and "Windows Subsystem for Linux" used by the newer Microsoft Store  version.
+# This process will be automatically started by the launcher application (wsl.exe) or
+# the manager Service (LxssManager in older versions, WslService in newer versions) when
+# needed, e.g. when starting a distro (see Start-Distro), and stopped automatically or
+# as a result of command "wsl.exe --shutdown" as done by Stop-Wsl.
 # .LINK
 # Stop-Wsl
 function Test-Wsl
 {
 	0 -lt (Get-Process -ProcessName wslhost -ErrorAction Ignore |
-		Where-Object -Property Path -EQ (Join-Path -Path $Env:SystemRoot -ChildPath System32\lxss\wslhost.exe) |
-		Where-Object -Property Description -EQ "Microsoft Windows Subsystem for Linux Background Host").Count
+		Where-Object { $_.Description -in "Microsoft Windows Subsystem for Linux Background Host", "Windows Subsystem for Linux"  }).Count
 }
 
 # .SYNOPSIS
