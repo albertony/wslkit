@@ -104,6 +104,9 @@
 # which the wsl.exe command line utility interfaces with. Luckily all changes
 # seem to be reflected immediately, no need to restart services etc to make
 # wsl.exe in sync with changes we do "behind the scenes" in registry.
+# There are also some utility functions for accessing the global
+# WSL configuration options, which is stored on INI file name .wslconfig in
+# the Windows user profile directory.
 # Some of the functions are:
 #   Get-Distro
 #   Get-DistroImage
@@ -120,6 +123,20 @@
 #   Get-DistroFileSystemVersion
 #   Rename-Distro
 #   Move-Distro
+#   Get-OptionProcessors/Set-OptionProcessors
+#   Get-OptionMemory/Set-OptionMemory
+#   Get-OptionSwap/Set-OptionSwap
+#   Get-OptionSwapFile/Set-OptionSwapFile
+#   Get-OptionVmIdleTimeout/Set-OptionVmIdleTimeout
+#   Get-OptionGuiApplications/Set-OptionGuiApplications
+#   Get-OptionNestedVirtualization/Set-OptionNestedVirtualization
+#   Get-OptionNetworkingMode/Set-OptionNetworkingMode
+#   Get-OptionFirewall/Set-OptionFirewall
+#   Get-OptionDnsTunneling/Set-OptionDnsTunneling
+#   Get-OptionLocalhostForwarding/Set-OptionLocalhostForwarding
+#   Get-OptionAutoProxy/Set-OptionAutoProxy
+#   Get-OptionAutoMemoryReclaim/Set-OptionAutoMemoryReclaim
+#   Get-OptionSparseVhd/Set-OptionSparseVhd
 #
 # Main script for the VPNKit part, and the main inspiration for the
 # network related functionality, is based on the following repository:
@@ -606,9 +623,9 @@ function ValidateDistroUserName
 
 # .SYNOPSIS
 # Helper function to get the primary registry key.
-function GetWSLRegistryKey([string] $Name, [switch] $All)
+function GetWSLRegistryKey()
 {
-	Get-Item -Path HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss\
+	Get-Item -LiteralPath HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss\
 }
 
 # .SYNOPSIS
@@ -647,6 +664,27 @@ function Set-DefaultDistroVersion
 {
 	[CmdletBinding()] param([ValidateRange(1, 2)][Parameter(Mandatory)] [int] $Version)
 	GetWSLRegistryKey | Set-ItemProperty -Name DefaultVersion -Value $Version
+}
+
+# .SYNOPSIS
+# Get default version that new WSL distros will be created with.
+# .LINK
+# Set-DefaultDistroVersion
+function Get-NatIpAddress()
+{
+	GetWSLRegistryKey | Get-ItemPropertyValue -Name NatIpAddress
+}
+
+# .SYNOPSIS
+# Set default version that new WSL distros will be created with.
+# .DESCRIPTION
+# The same can be done with `wsl.exe --set-default-version <Version>`.
+# .LINK
+# Get-DefaultDistroVersion
+function Set-NatIpAddress
+{
+	[CmdletBinding()] param([ValidateRange(1, 2)][Parameter(Mandatory)] [ipaddress] $Ip)
+	GetWSLRegistryKey | Set-ItemProperty -Name NatIpAddress -Value $Ip
 }
 
 # .SYNOPSIS
@@ -1242,6 +1280,528 @@ function GetDistroNameOrDefault([string] $Name)
 function IsDistroVersion2([string] $Name)
 {
 	((GetDistroRegistryItem -Name $Name -All:$All | Select-Object -ExpandProperty Flags) -band [DistroFlags]::Version2) -ne 0
+}
+
+# .SYNOPSIS
+# Helper function to get the path to the global configuration file.
+function GetWSLGlobalConfigurationFilePath()
+{
+	Join-Path -Path $Env:USERPROFILE -ChildPath .wslconfig
+}
+
+# .SYNOPSIS
+# Helper function to get the global configuration.
+# .DESCRIPTION
+# The returned type is (ordered) hashtable. If requesting all then
+# it contains keys with section names ("wsl2" and "experimental"),
+# and values which are also (ordered) hashtables containing the properties
+# from that section. If requesting a single section, then only the hashtable
+# of properties from that section is returned.
+# The INI dialect used by WSL uses Unix-style '#' prefixed comments
+# and all properties are in sections (no "global" properties), but the parser
+# implementation used here is based on a generic parser and will therefore
+# accept also other (invalid) variants should the file contain that.
+function GetWSLGlobalConfiguration([string] $Section)
+{
+	$Result = [ordered]@{}
+	$CommentCount = 0
+	$EmptyCount = 0
+	$CurrentSection = $null
+	$CurrentSectionCommentCount = 0
+	$CurrentSectionEmptyCount = 0
+	switch -regex -file (GetWSLGlobalConfigurationFilePath) {
+		"^\s*\[(.+)\]\s*$" { # Named section
+			if ($CurrentSection) {
+				if ($Section) { # If fetching single named section we are done
+					break
+				}
+				$Result[$CurrentSection.Name] = $CurrentSection.Content
+				$CurrentSection = $null
+			}
+			$Key = $Matches[1]
+			if (-not $Section -or $Key -eq $Section) {
+				$CurrentSection = @{
+					Name = $Key
+					Content = [ordered]@{}
+				}
+			}
+			continue
+		}
+		"^\s*(.+?)\s*=\s*(.*?)\s*$" { # Property (key-value pair)
+			$Key, $Value = $Matches[1..2]
+			if ($CurrentSection) {
+				$CurrentSection.Content[$Key] = $Value
+			} else {
+				$Result[$Key] = $Value
+			}
+			continue
+		}
+		"^\s*[;#]\s*(.*)\s*$" { # Comment
+			if (-not $IgnoreComments) {
+				$Value = $Matches[1]
+				if ($CurrentSection) {
+					$CurrentSectionCommentCount++
+					$Key = "#comment${CurrentSectionCommentCount}"
+					$CurrentSection.Content[$Key] = $Value
+				} else {
+					$CommentCount++
+					$Key = "#comment${CommentCount}"
+					$Result[$Key] = $Value
+				}
+			}
+			continue
+		}
+		"^\s*$" { # Empty
+			if (-not $IgnoreEmpty) {
+				if ($CurrentSection) {
+					$CurrentSectionEmptyCount++
+					$Key = "#empty${CurrentSectionEmptyCount}"
+					$CurrentSection.Content[$Key] = ""
+				} else {
+					$EmptyCount++
+					$Key = "#empty${EmptyCount}"
+					$Result[$Key] = ""
+				}
+			}
+			continue
+		}
+	}
+	if ($Section) {
+		# Return content from a single named section.
+		# Due to the break statement we can this is still in variable $CurrentSection.
+		$CurrentSection.Content
+	} else {
+		# Return all.
+		if ($CurrentSection) { # Make sure last parsed section is included
+			$Result[$CurrentSection.Name] = $CurrentSection.Content
+		}
+		$Result
+	}
+}
+
+# .SYNOPSIS
+# Helper function to set the global configuration.
+# .DESCRIPTION
+# This writes to a file named .wslconfig in your Windows user profile directory,
+# and overwrites any existing file with same name.
+# Keep in mind you may need to run wsl --shutdown to shut down the WSL 2 VM
+# and then restart your WSL instance for these changes to take effect.
+function SetWSLGlobalConfiguration
+{
+	[CmdletBinding()]
+	param (
+		[Parameter(Mandatory)] $Configuration
+	)
+	$UnixDialect = $true
+	$SectionCount = 0
+	$true, $false | ForEach-Object { # Global properties must come before any sections
+		$Globals = $_
+		$Configuration.GetEnumerator() | ForEach-Object {
+			if (-not $Globals -and ($_.Value -is [hashtable] -or $_.Value -is [System.Collections.Specialized.OrderedDictionary])) { # Plain @{} or with accelerator [ordered]
+				"[$($_.Key)]"
+				$_.Value.GetEnumerator() | ForEach-Object {
+					if ($_.Key -match "^#empty(\d+)") {
+						""
+					} elseif ($_.Key -match "^#comment(\d+)") {
+						"$(if($UnixDialect){'#'}else{';'}) $($_.Value)"
+					} else {
+						"$($_.Key)=$($_.Value)"
+					}
+				}
+				$SectionCount++
+			} elseif ($Globals -and -not ($_.Value -is [hashtable] -or $_.Value -is [System.Collections.Specialized.OrderedDictionary])) {
+				if ($_.Key -match "^#empty(\d+)") {
+					""
+				} elseif ($_.Key -match "^#comment(\d+)") {
+					"$(if($UnixDialect){'#'}else{';'}) $($_.Value)"
+				} else {
+					"$($_.Key)=$($_.Value)"
+				}
+			}
+		}
+	} | Out-File -Encoding utf8 -LiteralPath (GetWSLGlobalConfigurationFilePath)
+}
+
+# .SYNOPSIS
+# Helper function to read global configuration, update one option,
+# and save it back.
+function GetSetWSLGlobalConfigurationOption
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)] $Section,
+		[Parameter(Mandatory)] $Key,
+		[Parameter(Mandatory)] $Value
+	)
+	$Configuration = GetWSLGlobalConfiguration
+	$Configuration.${Section}.${Key} = $Value
+	SetWSLGlobalConfiguration $Configuration
+	if (-not $Force -and -not $PSCmdlet.ShouldContinue("To ensure changes have effect, WSL must be shut down.`nThis will terminate all running distributions as well as the shared virtual machine.`nDo you want to continue?", "Shutdown WSL")) { return }
+	wsl.exe --shutdown
+	if ($LastExitCode -ne 0) { throw "Shutdown failed (error code ${LastExitCode})" }
+}
+
+# .SYNOPSIS
+# Get option that controls how many logical processors to assign to the WSL 2 VM.
+# .LINK
+# Set-OptionProcessors
+function Get-OptionProcessors()
+{
+	(GetWSLGlobalConfiguration).wsl2.processors
+}
+
+# .SYNOPSIS
+# Set option that controls how many logical processors to assign to the WSL 2 VM.
+# .LINK
+# Get-OptionProcessors
+function Set-OptionProcessors
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][uint] $Number
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key processors -Value $Number
+}
+
+# .SYNOPSIS
+# Get option that controls how much memory to assign to the WSL 2 VM.
+# .LINK
+# Set-OptionMemory
+function Get-OptionMemory()
+{
+	(GetWSLGlobalConfiguration).wsl2.memory
+}
+
+# .SYNOPSIS
+# Set option that controls how many logical processors to assign to the WSL 2 VM.
+# .LINK
+# Get-OptionMemory
+function Set-OptionMemory
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][string] $Size # Value must be a size followed by a unit, for example, 8GB or 512MB
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key memory -Value $Size
+}
+
+# .SYNOPSIS
+# Get option that controls how much swap space to add to
+# the WSL 2 VM, 0 for no swap file.
+# .LINK
+# Set-OptionSwap
+# Get-OptionSwapFile
+# Set-OptionSwapFile
+function Get-OptionSwap()
+{
+	(GetWSLGlobalConfiguration).wsl2.swap
+}
+
+# .SYNOPSIS
+# Set option that controls how much swap space to add to
+# the WSL 2 VM, 0 for no swap file.
+# .LINK
+# Get-OptionSwap
+# Get-OptionSwapFile
+# Set-OptionSwapFile
+function Set-OptionSwap
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][string] $Size # Value must be a size followed by a unit, for example, 8GB or 512MB
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key swap -Value $Size
+}
+
+# .SYNOPSIS
+# Get option that sets custom path to the swap virtual hard disk.
+# .LINK
+# Set-OptionSwapFile
+# Get-OptionSwap
+# Set-OptionSwap
+function Get-OptionSwapFile()
+{
+	(GetWSLGlobalConfiguration).wsl2.swapFile
+}
+
+# .SYNOPSIS
+# Set option that sets custom path to the swap virtual hard disk.
+# .LINK
+# Get-OptionSwapFile
+# Get-OptionSwap
+# Set-OptionSwap
+function Set-OptionSwapFile
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][string] $Path # Default is "%LOCALAPPDATA%\Temp\swap.vhdx", i.e. "%USERPROFILE%\AppData\Local\Temp\swap.vhdx"
+	)
+	# Instead of default:
+	#   GetSetWSLGlobalConfigurationOption -Section wsl2 -Key swapFile -Value $Path
+	# We use custom implementation, to handle removal of existing file:
+	$Configuration = GetWSLGlobalConfiguration
+	$ExistingSwapFilePath = $Configuration.wsl2.swapFile
+	if (-not $ExistingSwapFilePath) {
+		$ExistingSwapFilePath = Join-Path -Path $Env:LOCALAPPDATA -ChildPath 'Temp\swap.vhdx'
+	}
+	if (Test-Path -LiteralPath $ExistingSwapFilePath) {
+		if ($Force -or $PSCmdlet.ShouldContinue("Do you want to delete existing swap file '${ExistingSwapFilePath}'?", "Delete existing swap file")) {
+			if (-not $Force -and -not $PSCmdlet.ShouldContinue("To ensure ensure file is not in use, WSL must be shut down.`nThis will terminate all running distributions as well as the shared virtual machine.`nDo you want to continue?", "Shutdown WSL")) {
+				wsl.exe --shutdown
+				if ($LastExitCode -ne 0) { throw "Shutdown failed (error code ${LastExitCode})" }
+			}
+			Remove-Item -LiteralPath $ExistingSwapFilePath
+		}
+	}
+	$Configuration.wsl2.swapFile = $Path
+	SetWSLGlobalConfiguration $Configuration
+	if (-not $Force -and -not $PSCmdlet.ShouldContinue("To ensure changes have effect, WSL must be shut down.`nThis will terminate all running distributions as well as the shared virtual machine.`nDo you want to continue?", "Shutdown WSL")) { return }
+	wsl.exe --shutdown
+	if ($LastExitCode -ne 0) { throw "Shutdown failed (error code ${LastExitCode})" }
+}
+
+# .SYNOPSIS
+# Get option that sets the number of milliseconds that a VM is idle,
+# before it is shut down.
+# .LINK
+# Set-OptionVmIdleTimeout
+function Get-OptionVmIdleTimeout()
+{
+	(GetWSLGlobalConfiguration).wsl2.vmIdleTimeout
+}
+
+# .SYNOPSIS
+# Set option that sets the number of milliseconds that a VM is idle,
+# before it is shut down.
+# .LINK
+# Get-OptionVmIdleTimeout
+function Set-OptionVmIdleTimeout
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][uint] $Number
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key vmIdleTimeout -Value $Number
+}
+
+# .SYNOPSIS
+# Get option that controls support for GUI applications (WSLg).
+# .LINK
+# Set-OptionGuiApplications
+function Get-OptionGuiApplications()
+{
+	(GetWSLGlobalConfiguration).wsl2.guiApplications
+}
+
+# .SYNOPSIS
+# Set option that controls support for GUI applications (WSLg).
+# .LINK
+# Get-OptionGuiApplications
+function Set-OptionGuiApplications
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][bool] $Enabled
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key guiApplications -Value $Enabled
+}
+
+# .SYNOPSIS
+# Get option that controls nested virtualization,
+# enabling other nested VMs to run inside WSL 2.
+# .LINK
+# Set-OptionNestedVirtualization
+function Get-OptionNestedVirtualization()
+{
+	(GetWSLGlobalConfiguration).wsl2.nestedVirtualization
+}
+
+# .SYNOPSIS
+# Set option that controls support for GUI applications (WSLg).
+# .LINK
+# Get-OptionNestedVirtualization
+function Set-OptionNestedVirtualization
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][bool] $Enabled
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key nestedVirtualization -Value $Enabled
+}
+
+# .SYNOPSIS
+# Get option that controls the networking mode.
+# .LINK
+# Set-OptionNetworkingMode
+function Get-OptionNetworkingMode()
+{
+	(GetWSLGlobalConfiguration).wsl2.networkingMode
+}
+
+# .SYNOPSIS
+# Set option that controls the networking mode.
+# .LINK
+# Get-OptionNetworkingMode
+function Set-OptionNetworkingMode
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][string] $String
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key networkingMode -Value $String
+}
+
+# .SYNOPSIS
+# Get option that controls the firewall feature.
+# .LINK
+# Set-OptionFirewall
+function Get-OptionFirewall()
+{
+	(GetWSLGlobalConfiguration).wsl2.firewall
+}
+
+# .SYNOPSIS
+# Set option that controls the firewall feature.
+# .LINK
+# Get-OptionFirewall
+function Set-OptionFirewall
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][bool] $Enabled
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key firewall -Value $Enabled
+}
+
+# .SYNOPSIS
+# Get option that controls the DNS tunneling feature.
+# .LINK
+# Set-OptionDnsTunneling
+function Get-OptionDnsTunneling()
+{
+	(GetWSLGlobalConfiguration).wsl2.dnsTunneling
+}
+
+# .SYNOPSIS
+# Set option that controls the DNS tunneling feature.
+# .LINK
+# Get-OptionDnsTunneling
+function Set-OptionDnsTunneling
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][bool] $Enabled
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key dnsTunneling -Value $Enabled
+}
+
+# .SYNOPSIS
+# Get option that controls if ports bound to wildcard or localhost
+# in the WSL 2 VM should be connectable from the host via localhost:port.
+# .LINK
+# Set-OptionLocalhostForwarding
+function Get-OptionLocalhostForwarding()
+{
+	(GetWSLGlobalConfiguration).wsl2.localhostForwarding
+}
+
+# .SYNOPSIS
+# Set option that controls if ports bound to wildcard or localhost
+# in the WSL 2 VM should be connectable from the host via localhost:port.
+# .LINK
+# Get-OptionLocalhostForwarding
+function Set-OptionLocalhostForwarding
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][bool] $Enabled
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key localhostForwarding -Value $Enabled
+}
+
+# .SYNOPSIS
+# Get option that controls if WSL should use Windows HTTP proxy information.
+# .LINK
+# Set-OptionAutoProxy
+function Get-OptionAutoProxy()
+{
+	(GetWSLGlobalConfiguration).wsl2.autoProxy
+}
+
+# .SYNOPSIS
+# Set option that controls if WSL should use Windows HTTP proxy information.
+# .LINK
+# Get-OptionAutoProxy
+function Set-OptionAutoProxy
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][bool] $Enabled
+	)
+	GetSetWSLGlobalConfigurationOption -Section wsl2 -Key autoProxy -Value $Enabled
+}
+
+# .SYNOPSIS
+# Get option that controls if WSL automatically releases cached memory after
+# detecting idle CPU usage. Set to "gradual" for slow release, and "dropcache"
+# for instant release of cached memory. Default "disabled".
+# .LINK
+# Set-OptionAutoMemoryReclaim
+function Get-OptionAutoMemoryReclaim()
+{
+	(GetWSLGlobalConfiguration).experimental.autoMemoryReclaim
+}
+
+# .SYNOPSIS
+# Set option that controls if WSL automatically releases cached memory after
+# detecting idle CPU usage. Set to "gradual" for slow release, and "dropcache"
+# for instant release of cached memory. Default "disabled".
+# .LINK
+# Get-OptionAutoMemoryReclaim
+function Set-OptionAutoMemoryReclaim
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][string] $String
+	)
+	GetSetWSLGlobalConfigurationOption -Section experimental -Key autoMemoryReclaim -Value $String
+}
+
+# .SYNOPSIS
+# Get option that controls if newly created VHD will be set to sparse automatically.
+# .LINK
+# Set-OptionSparseVhd
+function Get-OptionSparseVhd()
+{
+	(GetWSLGlobalConfiguration).experimental.sparseVhd
+}
+
+# .SYNOPSIS
+# Set option that controls if newly created VHD will be set to sparse automatically.
+# .LINK
+# Get-OptionSparseVhd
+function Set-OptionSparseVhd
+{
+	[CmdletBinding(SupportsShouldProcess)]
+	param
+	(
+		[Parameter(Mandatory)][bool] $Enabled
+	)
+	GetSetWSLGlobalConfigurationOption -Section experimental -Key sparseVhd -Value $Enabled
 }
 
 # .SYNOPSIS
