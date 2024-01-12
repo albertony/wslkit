@@ -50,7 +50,9 @@ if [ $agent_run_state -lt 2 ]; then
             # Agent already have keys, so we use fingerprint (SHA256 of 43 base64 characters, or SHA512 of 86 base64 characters)
             # to check if the key reprenseted by given identity_file is already loaded.
             #if ssh-add -L | ssh-keygen -E sha256 -lf /dev/stdin | grep -q $(ssh-keygen -lf $identity_file -E sha256 | grep -o 'SHA256.\{43\}'); then
-            if ssh-add -L | ssh-keygen -E sha256 -lf /proc/self/fd/0 | grep -q $(ssh-keygen -lf $identity_file -E sha256 | grep -o 'SHA256.\{43\}'); then
+            #if ssh-add -L | ssh-keygen -E sha256 -lf /proc/self/fd/0 | grep -q $(ssh-keygen -lf $identity_file -E sha256 | grep -o 'SHA256.\{43\}'); then
+            # NEW: Since version 7.2 (released on on 2016-02-28), this is now possible by passing - as the file name:
+            if ssh-add -L | ssh-keygen -E sha256 -lf - | grep -q $(ssh-keygen -lf $identity_file -E sha256 | grep -o 'SHA256.\{43\}'); then
                 echo "Identity exists: $identity_file"
             else
                 echo "Adding SSH identity to the authentication agent"
