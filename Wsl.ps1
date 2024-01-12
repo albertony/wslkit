@@ -1440,6 +1440,7 @@ function Get-DistroImage
 	# There is only an unofficial Arch WSL available.
 	# Note: The compressed tar file must be fixed before import, the filesystem must be moved from subfolder root.x86_64 to root.
 	$ReleaseFolders = Invoke-WebRequest -Uri 'https://archive.archlinux.org/iso/' -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -Last 2 | Select-Object -ExpandProperty href
+	[array]::Reverse($ReleaseFolders) # Make first entry the last from response, which is the newest by date
 	foreach ($ReleaseFolder in $ReleaseFolders) {
 		$Version = $ReleaseFolder.TrimEnd('/')
 		$ArchiveName = "archlinux-bootstrap-${Version}-x86_64.tar.gz"
