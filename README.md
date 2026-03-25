@@ -24,6 +24,29 @@ convenience shell scripts that can be executed from within a newly created WSL d
 for quick initial configuration, installation of different predefined sets of software
 packages etc.
 
+> [!WARNING]
+> This project is for the most part outdated and unmaintained!
+>
+> Most of the content comes from work done around the years 2021 - 2022, and are related to the
+> WSL version and Linux distributions from that time. Since then, networking features in WSL has
+> improved a lot, the Mirrored Networking mode solves most of the previous issues, and I no longer
+> need to use the VPNKit functionality myself! Also the WSL distro format has improved, with a
+> new so-called modern distro variant as an alternative to the original appx installers, which are
+> very close to plain root filesystem archives that this project uses for sideloading. In addition,
+> the official wsl command line utility has improved, and there is now even a GUI application for
+> configuring WSL.
+>
+> However, some parts of this project are still relevant. At least the convenience shell scripts, but
+> also several parts of the PowerShell script for general WSL and distro administration. Sideloading
+> distros is also still a thing. For all I know, VPNKit may also still be relevant for some environments.
+> And then there is the documentation in this readme, parts of it may still be useful. For now, I have
+> kept most of the original content of this project, while pushing a few updates now and then when I
+> find some improvements in features that I use myself. I may decide to do a proper refactoring at some
+> point, reviving the project into a proper up-to-date and maintained state, by removing outdated things,
+> including everything related to VPNKit (which is quite a big part), and by updating scripts and
+> documentation according to current WSL and distro versions. If/when I will invest the necessary time to
+> do that, I don't know.
+
 ### Windows version
 
 This project was initially created to work on Windows 10 version 1909 (build 18363),
