@@ -23,7 +23,7 @@ fi
 # Localizations
 find /usr/share/locale -mindepth 1 -maxdepth 1 -type d -not -name en_US -exec rm -r {} \;
 # Internationalizations
-find /usr/share/i18n/locales -mindepth 1 -maxdepth 1 -type f -not -name 'i18n*' -not -name 'iso*' -not -name 'trans*' -not -name en_US -not -name en_GB -not -name nb_NO -delete
+find /usr/share/i18n/locales -mindepth 1 -maxdepth 1 -type f -not -name 'C' -not -name 'POSIX' -not -name 'i18n' -not -name 'i18n_ctype' -not -name 'iso14651_t1' -not -name 'iso14651_t1_common' -not -name 'trans*' -not -name en_US -not -name en_GB -not -name nb_NO -not -name nn_NO -delete
 # Character sets
 find /usr/share/i18n/charmaps -mindepth 1 -maxdepth 1 -type f -not -name UTF-8.gz -delete
 # Documentation
@@ -40,7 +40,7 @@ else
     cat <<EOF > /etc/pacman.d/noextract
 [options]
 NoExtract = usr/share/locale/* !usr/share/locale/locale.alias !usr/share/locale/en_US/*
-NoExtract = usr/share/i18n/locales/* !usr/share/i18n/locales/i18n* !usr/share/i18n/locales/iso* !usr/share/i18n/locales/trans* !usr/share/i18n/locales/en_US !usr/share/i18n/locales/en_GB !usr/share/i18n/locales/nb_NO
+NoExtract = usr/share/i18n/locales/* !usr/share/i18n/locales/C !usr/share/i18n/locales/POSIX !usr/share/i18n/locales/i18n !usr/share/i18n/locales/i18n_ctype !usr/share/i18n/locales/iso14651_t1 !usr/share/i18n/locales/iso14651_t1_common !usr/share/i18n/locales/trans* !usr/share/i18n/locales/en_US !usr/share/i18n/locales/en_GB !usr/share/i18n/locales/nb_NO !usr/share/i18n/locales/nn_NO
 NoExtract = usr/share/i18n/charmaps/* !usr/share/i18n/charmaps/UTF-8.gz
 NoExtract = usr/share/doc/* usr/share/info/* usr/share/gtk-doc/html/* usr/share/man/*
 EOF
