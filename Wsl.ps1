@@ -615,7 +615,7 @@ function ValidateDistroName
 function ValidateDistroUserName
 {
 	param ([string] $UserName)
-	if ($UserName -notmatch '^[a-z_][a-z0-9_-]*[$]?$') { # Not strict requirement in all distros, but highly recommended to only use usernames that begin with a lower case letter or an underscore, followed by lower case letters, digits, underscores, or dashes. They can end with a dollar sign.
+	if ($UserName -cnotmatch '^[a-z_][a-z0-9_-]*[$]?$') { # Not strict requirement in all distros, but highly recommended to only use usernames that begin with a lower case letter or an underscore, followed by lower case letters, digits, underscores, or dashes. They can end with a dollar sign.
 		throw [System.Management.Automation.PSArgumentException] "The user name `"${UserName}`" is not valid. Must begin with a lower case letter or an underscore, followed by lower case letters, digits, underscores, or dashes. May end with a dollar sign."
 	}
 	$true
@@ -784,7 +784,7 @@ function Set-DistroDistributionName
 		[string] $Name,
 
 		[Parameter(Mandatory)]
-		[ValidateNotNullOrEmpty()] [ValidatePattern('^[a-zA-Z0-9._-]+$')] # See https://github.com/microsoft/WSL-DistroLauncher/blob/master/DistroLauncher/DistributionInfo.h
+		[ValidateNotNullOrEmpty()] [ValidatePattern('^[a-zA-Z0-9._-]+$', Options = 'None')] # See https://github.com/microsoft/WSL-DistroLauncher/blob/master/DistroLauncher/DistributionInfo.h
 		[string] $NewName
 	)
 	GetDistroRegistryItem -Name $Name | Set-ItemProperty -Name DistributionName -Value $NewName
@@ -2210,7 +2210,7 @@ function New-Distro
 	(
 		# The name to register for the distro.
 		[Parameter(Mandatory)]
-		[ValidatePattern('^[a-zA-Z0-9._-]+$')] # See https://github.com/microsoft/WSL-DistroLauncher/blob/master/DistroLauncher/DistributionInfo.h
+		[ValidatePattern('^[a-zA-Z0-9._-]+$', Options = 'None')] # See https://github.com/microsoft/WSL-DistroLauncher/blob/master/DistroLauncher/DistributionInfo.h
 		[Alias("Distribution", "Distro")]
 		[string] $Name,
 
@@ -2728,7 +2728,7 @@ function Rename-Distro
 		[string] $Name,
 
 		[Parameter(Mandatory)]
-		[ValidateNotNullOrEmpty()] [ValidatePattern('^[a-zA-Z0-9._-]+$')] # See https://github.com/microsoft/WSL-DistroLauncher/blob/master/DistroLauncher/DistributionInfo.h
+		[ValidateNotNullOrEmpty()] [ValidatePattern('^[a-zA-Z0-9._-]+$', Options = 'None')] # See https://github.com/microsoft/WSL-DistroLauncher/blob/master/DistroLauncher/DistributionInfo.h
 		[string] $NewName
 	)
 	$Name = GetDistroNameOrDefault -Name $Name
@@ -3181,7 +3181,7 @@ function New-VpnKit
 			# Update default values of VPNKIT_PATH and VPNKIT_NPIPERELAY_PATH variables in the script to the destination path via automount.
 			# NOTE: This will tie it to the VPNKit program folder on host!
 			$DestinationMount = $Destination.Replace('\','/')
-			if ($DestinationMount -notmatch '^(\w):(.*?)(?:/*)$') { throw "Destination must be a rooted path reachable from wsl via automount" }
+			if ($DestinationMount -cnotmatch '^(\w):(.*?)(?:/*)$') { throw "Destination must be a rooted path reachable from wsl via automount" }
 			$DestinationMount = "/mnt/$($Matches[1].ToLower())$($Matches[2])"
 			$FileContent = [System.IO.File]::ReadAllText($DownloadFullName, (New-Object System.Text.UTF8Encoding $false)) # Note: File encoding is UTF-8 without BOM, using System.IO to be able to force this in PowerShell versions older than 7.0!
 			$FileContent = $FileContent -replace "\nVPNKIT_PATH=.*?\n", "`nVPNKIT_PATH=`${VPNKIT_PATH:-${DestinationMount}/wsl-vpnkit.exe}`n"
