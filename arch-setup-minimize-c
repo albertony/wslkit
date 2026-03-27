@@ -2,10 +2,13 @@
 #
 # Minimize filesystem.
 #
+# This variant keeps locale-specific content only for built-in locales and
+# the UTF-8 character set.
+#
 # Deleting unnecessary files, and configuring pacman to not reinstall them.
 # Creates file /etc/pacman.d/noextract, and includes it from /etc/pacman.conf.
 #
-# Reduces initial filesystem size from 535M to 429M.
+# As an example, this reduced initial filesystem size from 535M to 429M.
 #
 # Note: Doing this early, to avoid installing unnecessary files, but then
 # when updating /etc/pacman.conf we may not have grep available to check
@@ -21,14 +24,21 @@ if [ ${EUID:-$(id -u)} -ne 0 ]; then
 fi
 
 # Localizations
-find /usr/share/locale -mindepth 1 -maxdepth 1 -type d -not -name en_US -exec rm -r {} \;
+rm -r /usr/share/locale/*
 # Internationalizations
-find /usr/share/i18n/locales -mindepth 1 -maxdepth 1 -type f -not -name 'C' -not -name 'POSIX' -not -name 'i18n' -not -name 'i18n_ctype' -not -name 'iso14651_t1' -not -name 'iso14651_t1_common' -not -name 'trans*' -not -name en_US -not -name en_GB -not -name nb_NO -not -name nn_NO -delete
+find /usr/share/i18n/locales -mindepth 1 -maxdepth 1 -type f -not -name 'C' -not -name 'POSIX' -not -name 'i18n' -not -name 'i18n_ctype' -not -name 'iso14651_t1' -not -name 'iso14651_t1_common' -not -name 'translit_*' -delete
 # Character sets
 find /usr/share/i18n/charmaps -mindepth 1 -maxdepth 1 -type f -not -name UTF-8.gz -delete
 # Documentation
 rm -r /usr/share/doc/* /usr/share/info/* /usr/share/gtk-doc/html/* /usr/share/man/* > /dev/null 2>&1
-rm /README > /dev/null 2>&1
+# Licenses
+rm -r /usr/share/licenses/*
+# Supplementary files included in the file system root directory of some of the bootstrap distributions:
+# - 2021.01.01 included a README file
+# - 2022.01.01 included files version and pkglist.x86_64.txt, but no README file
+# - 2025.01.01 included version file only (pkglist.x86_64.txt was moved outside of the file system root)
+# - 2026.01.01 included none (version was moved moved outside of the file system root together with pkglist.x86_64.txt)
+rm /README /version /pkglist.x86_64.txt > /dev/null 2>&1
 
 # Make sure file /etc/pacman.d/noextract is generated with NoExtract options preventing reinstall removed files
 if [ -f "/etc/pacman.d/noextract" ]; then
@@ -39,10 +49,11 @@ else
     echo "Generating pacman NoExtract options in separate file /etc/pacman.d/noextract"
     cat <<EOF > /etc/pacman.d/noextract
 [options]
-NoExtract = usr/share/locale/* !usr/share/locale/locale.alias !usr/share/locale/en_US/*
-NoExtract = usr/share/i18n/locales/* !usr/share/i18n/locales/C !usr/share/i18n/locales/POSIX !usr/share/i18n/locales/i18n !usr/share/i18n/locales/i18n_ctype !usr/share/i18n/locales/iso14651_t1 !usr/share/i18n/locales/iso14651_t1_common !usr/share/i18n/locales/trans* !usr/share/i18n/locales/en_US !usr/share/i18n/locales/en_GB !usr/share/i18n/locales/nb_NO !usr/share/i18n/locales/nn_NO
+NoExtract = usr/share/locale/*
+NoExtract = usr/share/i18n/locales/* !usr/share/i18n/locales/C !usr/share/i18n/locales/POSIX !usr/share/i18n/locales/i18n !usr/share/i18n/locales/i18n_ctype !usr/share/i18n/locales/iso14651_t1 !usr/share/i18n/locales/iso14651_t1_common !usr/share/i18n/locales/translit_*
 NoExtract = usr/share/i18n/charmaps/* !usr/share/i18n/charmaps/UTF-8.gz
 NoExtract = usr/share/doc/* usr/share/info/* usr/share/gtk-doc/html/* usr/share/man/*
+NoExtract = usr/share/licenses/*
 EOF
 fi
 

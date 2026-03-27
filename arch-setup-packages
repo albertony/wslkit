@@ -1,15 +1,33 @@
 #!/bin/sh
 #
-# Perform full package database update and package upgrade.
+# Force package database update, perform full package upgrade/downgrade, and install basic utilities.
 #
-# Force update the package database and upgrade/downgrade any modified packages.
-# NOTE: Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
+# This is intended for initial setup. For later upgrades, use arch-upgrade or
+# arch-upgrade-full instead. This script does everything that arch-upgrade-full
+# does, except this does not rely on sudo (which may not be installed yet) and
+# must therefore be run as root, and it does the additional task of checking the
+# timezone database and installing basic utilities if missing.
+#
+# This takes a thorough, robust and clean approach. It accounts for changes to
+# the signing keys, which may otherwise lead to errors such as "unknown trust"
+# or "marginal trust" during package upgrades, especially if the system is not
+# upgraded regularly. The solution is to manually sync the package database and
+# upgrade the archlinux-keyring package before upgrading other packages. Then it
+# upgrades all other packages, without performing an unnecessary extra sync of
+# the package database. After that, it performs cleanup by removing (uninstalling)
+# any packages that are no longer required, considering packages that were not
+# explicitly installed, but originally installed as a dependency of other packages,
+# even as an optional dependency. When dependency relations are removed as part of a
+# packages upgrade, the dependent packages are normally left behind. These are also
+# known as orphans. Finally, it cleans up the package database (cache), removing
+# packages that are no longer installed to free up disk space.
+#
+# Passes any script arguments to the pacman commands, so can execute script with
+# --noconfirm for instance to run non-interactively proceeding without prompting
+# user.
+#
+# Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
 # at least never just --refresh (-y) which will easily lead to the partial upgrades syndrome!
-# Here we do both, performing update and upgrade as a separate step, before installing
-# new packages below with none of them! Doubling up both options (corresponding to -Syyuu)
-# means forced refresh even if they appear to be up to date, and then full upgrade allowing
-# downgrading individual packages to match the version currently in cache! Will prompt
-# user, though, before proceeding (unless --noconfirm is added).
 #
 
 # Verify running as root (not relying on sudo which may not be installed yet).
@@ -20,6 +38,7 @@ fi
 
 #
 # Force update the package database.
+# Will refresh even if it appear to be up-to-date, due to double --refresh.
 #
 echo
 echo "Forcing update of package database..."
@@ -30,10 +49,6 @@ fi
 
 #
 # Ensure keyring contains the latest official set of packager keys.
-#
-# This needs to be done before upgrade of other packages to avoid potential issues
-# with "unknown trust" or "marginal trust" of signatures on other packages to be
-# upgraded in the same operation.
 #
 # The package archlinux-keyring contains the official set of keys. Assuming
 # it is preinstalled: Newer versions of Arch comes with the "base" meta package
@@ -54,9 +69,17 @@ fi
 #
 # Force upgrade/downgrade any modified packages.
 #
+# Not performing another database refresh at this point, could add --refresh to do that,
+# and even twice if we wanted to force the refresh.
+#
+# Allowing downgrading packages to match the version currently in cache with
+# double --sysupgrade options, which are usually only relevant when switching package
+# repositories and performing a full upgrade. It will interactively prompt for confirmation
+# before proceeding should any be found, which could be avoided by adding --noconfirm.
+#
 echo
 echo "Performing full upgrade/downgrade of packages..."
-if ! pacman --sync --refresh --refresh --sysupgrade --sysupgrade "$@"; then
+if ! pacman --sync --sysupgrade --sysupgrade "$@"; then
     echo "Failed!"
     exit 1
 fi
@@ -64,9 +87,9 @@ fi
 #
 # Ensure complete timezone database.
 #
-# The tzdata package is already installed, as dependency to glibc,
-# but it is incomplete, missing about 800 of 2500 files, as revealed
-# by command "pacman --query --check tzdata".
+# In the bootstrap archive as of version 2021.02.01, the tzdata package was
+# already installed, as dependency to glibc, but incomplete, missing about 800
+# of 2500 files, as revealed by command "pacman --query --check tzdata".
 # This includes timezone definitions for Europe/Rome, Europe/Moscow, Europe/London,
 # Europe/Dublin and Europe/Oslo.
 # WSL automatically sets the timezone of the distro, it creates the /etc/localtime
@@ -74,6 +97,11 @@ fi
 # timezone in Windows. But if the timezone to be configured does not exist then
 # the distro will be left with UTC. To ensure timezone are set up, we reinstall
 # the tzdata package (no --needed argument) to ensure we have the complete set!
+# This may have changed in newer versions, and the situation may also be different
+# in other distributions, e.g. in the official WSL distro version 2026.03.01 the
+# tzdata package is complete, however then our check first will detect this and
+# just skip with the message that the timezone database is complete, so it should
+# be safe.
 #
 echo
 echo "Checking timezone database..."
@@ -145,7 +173,23 @@ then
 fi
 
 #
-# Cleanup package cache.
+# Uninstall any unrequired packages left behind (orphans).
+# Considering packages that were not explicitly installed, but originally installed as a
+# dependency of other packages, even as an optional dependency due to the double --unrequired.
+# Note: This command will fail when none were found: "argument '-' specified with empty stdin."
+#
+echo
+echo "Cleaning up unrequired packages..."
+echo "* Note that when none are found it is expected to see \"error: argument '-' specified with empty stdin\""
+pacman --query --deps --unrequired --unrequired --quiet | pacman --remove --nosave --recursive "$@" -
+
+#
+# Clean the package database (cache).
+# Removing packages that are no longer installed to free up disk space.
+# To completely delete the database, also packages that are currently installed, we could
+# add another --clean.
+# This will interactively prompt for confirmation before proceeding, unless --noconfirm
+# is also added.
 #
 echo
 echo "Cleanup package cache..."

@@ -74,7 +74,7 @@ fi
 
 echo
 echo "Cleaning package cache..."
-if ! pacman --sync --clean "$@"; then
+if ! sudo pacman --sync --clean "$@"; then
     echo "Failed!"
     exit 1
 fi

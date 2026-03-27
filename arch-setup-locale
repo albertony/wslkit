@@ -2,9 +2,31 @@
 #
 # Configure locale.
 #
-# Generate the default en_US.UTF-8 locale.
-# In the bootstrap archive as of 2021.02.01 this is the default locale, but it has not
-# been generated, so there will be some issues until this has been done!
+# WSL sets environment variable LANG on startup, and it looks for a file /etc/default/locale
+# and uses the value following "LANG=" on the last non-comment line where this is found.
+# If none are found it uses hard coded fall-back value "en_US.UTF-8". Arch, as a systemd
+# enabled distro, uses file /etc/locale.conf instead of /etc/default/locale to set the
+# default system locale, and the official Arch WSL distro bundles a file /etc/locale.conf
+# with content "LANG=C.UTF-8". A workaround to make WSL consider this, and set the LANG
+# environment variable to the same value instead of overriding with its own default value,
+# is to create a symbolic link at the location where WSL looks.
+#
+# The "C.UTF-8" is a modern invariant locale like the classic "C" locale but with Unicode
+# support, and is often used as default on containers and servers, and fits well for WSL.
+# On modern versions of Arch this is a built-in locale, that do not have to be generated.
+# This makes it a suitable locale to use in WSL as well, so if /etc/locale.conf is not
+# already defined, then we create one with the same content as default Arch above, to use
+# "C.UTF-8" as our own default as well.
+#
+# Regional locales are not built-in locales in Arch, and must be generated. This includes
+# WSL's fallback locale "en_US.UTF-8". So without doing the above ensuring C.UTF-8 is set,
+# then the distro would be started with en_US.UTF-8 specified as a locale, but it will not
+# have been generated, leading to various issues.
+
+# WSL reads the LANG value from /etc/default/locale, with fallback to "en_US.UTF-8",
+# and sets it as environment variable LANG. If the fallback is used, then this is not
+# a built-in locale in Arch, and must be generated! Here we make sure that is being
+# done when needed.
 # NOTE: Requires gzip installed, so must wait until after packages above are installed!
 # NOTE: Makes sure it is not commented out in /etc/locale.gen, even if locale is currently
 # enabled (has been generated), because that means it will be removed next time locales
@@ -17,13 +39,35 @@ if [ ${EUID:-$(id -u)} -ne 0 ]; then
     exit 1
 fi
 
-if [ "$LANG" = "en_US.UTF-8" ]; then
+if [ -f "/etc/default/locale" ]; then
+    echo "Skipping generating of symbolic link /etc/default/locale pointing to /etc/locale.conf: Path /etc/default/locale already exists"
+else
+    echo "Generating symbolic link /etc/default/locale pointing to /etc/locale.conf"
+    ln -s /etc/locale.conf /etc/default/locale
+    if [ -f "/etc/locale.conf" ]; then
+        echo "Loading existing system locale from /etc/locale.conf"
+    else
+        echo "Enabling system locale C.UTF-8 in /etc/locale.conf (creating)"
+        echo "LANG=C.UTF-8" > /etc/locale.conf
+    fi
+    . /etc/locale.conf
+fi
+
+if [ "$LANG" = "C.UTF-8" ]; then
+    echo "System locale specified in the LANG variable is the expected built-in ${LANG}"
+elif [ "$LANG" = "en_US.UTF-8" ]; then
+    # Note: This was what we previously used by default, but is no longer expected in
+    # normal cases, after introducing the above handling of any existing /etc/locale.conf
+    # and default creating it with C.UTF-8 locale. However, we still handle this in case
+    # it locale been manually configured to en_US.UTF-8, which is a much used locale, and
+    # it is also WSL's own general fall-back locale.
+    echo "System locale specified in the LANG variable is WSL's fall-back ${LANG} that must be generated"
     # NEW: Make sure we have an uncommented line "en_US.UTF-8 UTF-8" in /etc/locale.gen,
     # and then regenerate locale regardless if it has been done already!
     # Could use one of the following tests to detect if it has already been generated,
     # but must in any case make sure it is enabled in /etc/locale.gen because if not it
     # means it will be removed next time locales are regenerated (which happens
-    # automatically on glibc updates), so could just as well just always (re-)generate.
+    # automatically on glibc updates), so could just as well always (re-)generate.
     #   if locale --all-locales 2>/dev/null | grep --quiet --fixed-strings --line-regexp "en_US.utf8" ; then # Enabled means it must have been generated!
     #   if localedef --list-archive | grep --quiet --fixed-strings --line-regexp "en_US.utf8" ; then # Generated means it is enabled!
     # Note: There are two matches for en_US.UTF-8 UTF-8 in the default template:
@@ -58,7 +102,5 @@ if [ "$LANG" = "en_US.UTF-8" ]; then
     #    echo "Skipping enabling of system locale: en_US.UTF-8 is already enabled"
     #fi
 else
-    # TODO: Could change locale as well? Set LANG in /etc/locale.conf etc..
-    echo "WARNING: System locale expected to be en_US.UTF-8 but was ${LANG}"
+    echo "WARNING: System locale specified in the LANG variable is none of the expected C.UTF-8 or en_US.UTF-8 but ${LANG}"
 fi
-

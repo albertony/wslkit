@@ -1,0 +1,115 @@
+#!/bin/sh
+#
+# Force package database update and perform full package upgrade/downgrade.
+#
+# This forced update, and downgrade of any packages whose versions do not match
+# with the local versions, is usually only necessary when switching package
+# repositories. For regular updates the less intrusive upgrade done by
+# arch-upgrade is usually better. The only differences between these two are
+# that here we force update of package database using double --refresh options,
+# and we allow downgrading package using double --sysupgrade options.
+#
+# This takes a thorough, robust and clean approach. It accounts for changes to
+# the signing keys, which may otherwise lead to errors such as "unknown trust"
+# or "marginal trust" during package upgrades, especially if the system is not
+# upgraded regularly. The solution is to manually sync the package database and
+# upgrade the archlinux-keyring package before upgrading other packages. Then it
+# upgrades all other packages, without performing an unnecessary extra sync of
+# the package database. After that, it performs cleanup by removing (uninstalling)
+# any packages that are no longer required, considering packages that were not
+# explicitly installed, but originally installed as a dependency of other packages,
+# even as an optional dependency. When dependency relations are removed as part of a
+# packages upgrade, the dependent packages are normally left behind. These are also
+# known as orphans. Finally, it cleans up the package database (cache), removing
+# packages that are no longer installed to free up disk space.
+#
+# Passes any script arguments to the pacman commands, so can execute script with
+# --noconfirm for instance to run non-interactively proceeding without prompting
+# user.
+#
+# Everything done in this script could be boiled down to the following one-liner:
+#   pacman --sync --refresh --refresh --needed archlinux-keyring && pacman --sync --sysupgrade --sysupgrade && pacman --query --deps --unrequired --unrequired --quiet | pacman --remove --nosave --recursive -; pacman --sync --clean
+# And if switching to short form of all options, the one-liner can be made as short as this:
+#   pacman -Syy --needed archlinux-keyring && pacman -Suu && pacman -Qttdq | pacman -Rns -; pacman -Sc
+# If necessary, sudo must be added to all pacman commands, exept the
+# "pacman -Qttdq" / "pacman --query --deps --unrequired --unrequired --quiet".
+# Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
+# at least never just --refresh (-y) which will easily lead to the partial upgrades syndrome!
+#
+# NOTE: Assumes basic tools are already installed, including sudo.
+# Run script ./arch-setup first to ensure this!
+#
+
+#
+# Force update the package database.
+# Will refresh even if it appear to be up-to-date, due to double --refresh.
+#
+echo
+echo "Forcing update of package database..."
+if ! sudo pacman --sync --refresh --refresh "$@"; then
+    echo "Failed!"
+    exit 1
+fi
+
+#
+# Ensure keyring contains the latest official set of packager keys.
+#
+# The package archlinux-keyring contains the official set of keys. Assuming
+# it is preinstalled: Newer versions of Arch comes with the "base" meta package
+# preinstalled, and newer versions of that includes the archlinux-keyring package.
+# Previously the archlinux-keyring package would be implicitely included as pacman
+# version 6.0.1-5 and older had a dependency to it, but pacman version 6.0.1-6
+# removed the dependency to archlinux-keyring, and archlinux-keyring version
+# 20220713-2 added dependency to pacman instead, and then base version 3-1 was
+# extended to include archlinux-keyring in addition to pacman.
+#
+echo
+echo "Ensuring latest keyring package is installed..."
+if ! sudo pacman --sync --needed "$@" archlinux-keyring; then
+    echo "Failed!"
+    exit 1
+fi
+
+#
+# Force upgrade/downgrade any modified packages.
+#
+# Not performing another database refresh at this point, could add --refresh to do that,
+# and even twice if we wanted to force the refresh.
+#
+# Allowing downgrading packages to match the version currently in cache with
+# double --sysupgrade options, which are usually only relevant when switching package
+# repositories and performing a full upgrade. It will interactively prompt for confirmation
+# before proceeding should any be found, which could be avoided by adding --noconfirm.
+#
+echo
+echo "Performing full upgrade/downgrade of packages..."
+if ! sudo pacman --sync --sysupgrade --sysupgrade "$@"; then
+    echo "Failed!"
+    exit 1
+fi
+
+#
+# Uninstall any unrequired packages left behind (orphans).
+# Considering packages that were not explicitly installed, but originally installed as a
+# dependency of other packages, even as an optional dependency due to the double --unrequired.
+# Note: This command will fail when none were found: "argument '-' specified with empty stdin."
+#
+echo
+echo "Cleaning up unrequired packages..."
+echo "* Note that when none are found it is expected to see \"error: argument '-' specified with empty stdin\""
+pacman --query --deps --unrequired --unrequired --quiet | sudo pacman --remove --nosave --recursive "$@" -
+
+#
+# Clean the package database (cache).
+# Removing packages that are no longer installed to free up disk space.
+# To completely delete the database, also packages that are currently installed, we could
+# add another --clean.
+# This will interactively prompt for confirmation before proceeding, unless --noconfirm
+# is also added.
+#
+echo
+echo "Cleanup package cache..."
+if ! sudo pacman --sync --clean "$@"; then
+    echo "Failed!"
+    exit 1
+fi
