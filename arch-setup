@@ -25,7 +25,7 @@
 #   Windows timezone may not work.
 # - Perform full package database update and package upgrade.
 # - Install some basic utilities, such as sudo, sed, grep, wget, nano, etc.
-# - Configure system locale (en_us.UTF-8).
+# - Configure system locale (C.UTF-8 by default).
 # - Configure sudo, setting the built-in administrators group 'wheel' as allowed sudoer.
 # - Configure shell environment. When running in WSL, update prompt and terminal title
 #   for all users, including root, to use the WSL distro name in place of hostname.
@@ -33,12 +33,21 @@
 #   and grep (ls is default, not grep). Writes user-specific .bashrc in profile
 #   directories, does not modify global configuration.
 #
-# Contains hard coded configuration (spread accross the different sub-scripts):
-# - Generates and activates system locale en_US.UTF-8, removes everything else
-#   except for en_GB and nb_NO internationalization sources.
-# - Sets time zone Europe/Stockholm, which is part of the "Central European Time" (CET),
-#   with UTC offset +1.
-# - Enables the single package repository mirror mirror.terrahost.no.
+# Options:
+# - ARCH_SETUP_LANGUAGE: Set the language to keep localizations and
+#   internationalizations for during cleanup, and to set as the default system
+#   locale. When set as system locale, Unicode is always assumed, so this
+#   should be the "language[_territory]" part, and the ".codeset" suffix
+#   ".UTF-8" will be appended. The default corresponds to "C", and the only
+#   other value currently fully supported is "en_US".
+# - ARCH_SETUP_MIRROR: Set the package repository mirror to be configured.
+#   Note that this must be the address only to the root of the mirror server
+#   and without trailing slash, as "/$repo/os/$arch" will be appended when
+#   written to the mirrorlist file. The default corresponds
+#   "https://fastly.mirror.pkgbuild.com", which is the worldwide CDN mirror
+#   from Fastly that the official Arch WSL distro already has preconfigured.
+# - ARCH_SETUP_SUDO_NOPASSWD: Set non-empty to configure sudo to be allowed
+#   without password.
 #
 # Passes any script arguments to the pacman install commands, so can execute script
 # with --noconfirm for instance to run non-interactively proceeding without prompting
@@ -54,7 +63,7 @@ fi
 restart_required=0
 
 echo "Minimizing filesystem..."
-. "${0}-minimize-c"
+. "${0}-minimize-${ARCH_SETUP_LANGUAGE:-"C"}"
 
 echo
 echo "Configuring pacman..."

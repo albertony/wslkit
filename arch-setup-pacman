@@ -5,43 +5,79 @@
 # Assuming this script is run immediately after a clean install, we must ensure
 # that pacman is configured to be able to install the packages we want.
 # Therefore we start by intializing the pacman keyring, and then configures url
-# to a repository server (mirror).
+# to a package repository mirror.
 #
-# On a clean system installed from bootstrap archive there should be no keys, i.e. no
-# folder /etc/pacman.d/gnupg, but in case we have tried before without luck we delete
-# it which forces resetting of all keys as described here:
+# On a clean system installed from bootstrap archive there should be no keys,
+# i.e. no folder /etc/pacman.d/gnupg, but in case we have tried before without
+# luck we delete it which forces resetting of all keys as described here:
 # https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys
 #
-# When setting mirror, this just moves away the existing mirrorlist file to .old.<random>,
-# and then creates a new file with a hard coded url. Does not have tools such as grep
-# or sed to check if there are already mirrors enabled in the file (the default
-# mirrorlist contains all mirrors commented out).
-# TODO: We could have used gawk, see below (but we may or may not find it..?)
+# When setting mirror, this just moves away any existing mirrorlist file by
+# adding suffix .old.<random>, and then creates a new file with a single
+# specific mirror. Cannot assume tools such as grep or sed are available to
+# check if there are already mirrors enabled in the file (TODO: We could have
+# used gawk, see below, but we may or may not find it..?).
+# On a clean bootstrap archive there is a default mirrorlist file that contains
+# all mirrors commented out. The official Arch WSL distro comes bundles a
+# custom mirrorlist file with two mirrors configured. It currently prefers the
+# worldwide CDN mirror from Fastly, a sponsor of the Arch project providing
+# Hosting/CDN services. Previously it used their own worldwide GeoDNS mirror
+# service, which resolves to an actual mirror based on location, and this is
+# still kept but as a fall-back. The bundled mirrorlist file looks like this:
+#   Server = https://fastly.mirror.pkgbuild.com/$repo/os/$arch
+#   Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
+# Rackspace is another worldwide mirror, historically used a lot as a default:
+#   Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch
+# Here we use the Fastly CDN as default, but variable ARCH_SETUP_MIRROR can be
+# set to use something else. Note that this must be the address only to the
+# root of the mirror server and without trailing slash, e.g.
+# "https://fastly.mirror.pkgbuild.com", as "/$repo/os/$arch" will be appended
+# when written to the mirrorlist file.
 #
-# When using the official WSL distro a similar task have already been done: It has
-# preconfigured a couple of default urls in the bundled mirrorlist file, and on first
-# startup it initializes the pacman keyring. In this case we will still just reset
-# all keys (although unnecessary at this point) and create a new mirrorlist file (with
+# When using the official WSL distro a similar task may have already been done:
+# It has preconfigured a couple of default urls in the bundled mirrorlist file,
+# and on first startup it initializes the pacman keyring. In this case we will
+# still just reset all keys (although unnecessary at this point) and create a
+# new mirrorlist file (with
 # our own preferred urls), as described above.
 #
-# The "pacman-key --init" command executed below will on a clean install of bootstrap
-# archive as of 2021.02.01 report an error due to missing awk command. It does enough
-# that "pacman-key --populate archlinux" can be run next (and that fails without the
-# initial "pacman-key --init"), after which we are able to install packages (which we
-# can not without these two commands). Don't know the state of the generated keys in
-# this sitation, so would probably want to install gawk and reset the keys as
-# described here: https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys
-# But gawk is actually installed by default, it is just not not available as "awk"!
-# There is a symlink /usr/bin/awk pointing to /usr/bin/gawk, but /usr/bin/gawk does
-# not exist, while there is an executable /usr/bin/gawk-5.1.0 which does! So we find
-# it and copy it into /usr/bin/awk (or rather /usr/bin/gawk which /usr/bin/awk is an
-# symlink to). Reinstalling the gawk package would have done the same.
+# The "pacman-key --init" command executed below will on a clean install of
+# bootstrap archive as of 2021.02.01 report an error due to missing awk
+# command. It does enough that "pacman-key --populate archlinux" can be run
+# next (and that fails without the initial "pacman-key --init"), after which
+# we are able to install packages (which we can not without these two
+# commands). Don't know the state of the generated keys in this sitation, so
+# would probably want to install gawk and reset the keys as described here:
+# https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys
+# But gawk is actually installed by default, it is just not not available as
+# "awk"! There is a symlink /usr/bin/awk pointing to /usr/bin/gawk, but
+# /usr/bin/gawk does not exist, while there is an executable
+# /usr/bin/gawk-5.1.0 which does! So we find it and copy it into /usr/bin/awk
+# (or rather /usr/bin/gawk which /usr/bin/awk is an symlink to). Reinstalling
+# the gawk package would have done the same.
 #
 
 # Verify running as root (not relying on sudo which may not be installed yet).
 if [ ${EUID:-$(id -u)} -ne 0 ]; then
     echo 'Please run this script as root'
     exit 1
+fi
+
+# Configure package repository mirror
+# Note: Doing this first, before the "pacman-key --init" command, because it
+# uses this, and if the file does not exist it will report an error (but continue):
+#   error: config file /etc/pacman.d/mirrorlist could not be read: No such file or directory
+echo "Configuring package repository mirror ${ARCH_SETUP_MIRROR:-"https://fastly.mirror.pkgbuild.com"}"
+if [ "$(tail --lines=1 /etc/pacman.d/mirrorlist 2> /dev/null)" == "Server = ${ARCH_SETUP_MIRROR:-"https://fastly.mirror.pkgbuild.com"}/\$repo/os/\$arch" ]; then
+    echo "This is already in the mirrorlist file"
+else
+    if [ -e "/etc/pacman.d/mirrorlist" ]; then
+        mirrorlist_backup=$(mktemp --tmpdir=/etc/pacman.d mirrorlist.old.XXXXX)
+        echo "Moving existing mirrorlist file out of the way: $mirrorlist_backup"
+        mv /etc/pacman.d/mirrorlist $mirrorlist_backup
+    fi
+    echo "Writing new mirrorlist file"
+    echo "Server = ${ARCH_SETUP_MIRROR:-"https://fastly.mirror.pkgbuild.com"}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
 fi
 
 # Make sure awk is linked
@@ -82,28 +118,3 @@ if [ -e /etc/pacman.d/gnupg ]; then
 fi
 pacman-key --init
 pacman-key --populate > /dev/null
-
-# Configure package repository mirror
-# Currently using a Norwegian mirror, provided by the Norwegian Student's Society, based in Oslo. It is a
-# Tier 1 mirror of high quality and performance (at least from northern Europe), and it is not controlled
-# by a commercial company. The mirorlist file looks like this:
-#   Server = https://mirror.neuf.no/archlinux/$repo/os/$arch
-# The official Arch WSL distro currently prefers the worldwide CDN mirror from Fastly, a sponsor of the Arch
-# project providing Hosting/CDN services. Previously it used their own worldwide GeoDNS mirror service, which
-# resolves to an actual mirror based on location. This is now used as fall-back. The bundled mirrorlist file
-# looks like this:
-#   Server = https://fastly.mirror.pkgbuild.com/$repo/os/$arch
-#   Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
-# Rackspace is another worldwide mirror, historically used a lot as a default:
-#   Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch
-if [ "$(tail --lines=1 /etc/pacman.d/mirrorlist 2> /dev/null)" == "Server = https://mirror.neuf.no/archlinux/\$repo/os/\$arch" ]; then
-    echo "Package repository mirror already in mirrorlist";
-else
-    if [ -e "/etc/pacman.d/mirrorlist" ]; then
-        mirrorlist_backup=$(mktemp --tmpdir=/etc/pacman.d mirrorlist.old.XXXXX)
-        echo "Moving existing mirrorlist file out of the way: $mirrorlist_backup"
-        mv /etc/pacman.d/mirrorlist $mirrorlist_backup
-    fi
-    echo "Writing package repository mirror to new mirrorlist file"
-    echo "Server = https://mirror.neuf.no/archlinux/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
-fi
