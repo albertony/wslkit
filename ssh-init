@@ -1,20 +1,24 @@
 #!/bin/sh
 #
-# Init script for SSH agent, that starts an ssh-agent process if not already
-# running, and adds all identities found for current user that are not already
-# loaded. Its purpose is to not only avoid having to execute ssh-add once for
-# each identity, but also to be able to re-run it at will to ensure agent is
-# running and identities are loaded without having to re-enter password for
-# keys that are already loaded!
 #
-# Considers all key files in current user's ~/.ssh, assuming filename
-# prefix "id_" but not suffix "".pub" (e.g. "id_rsa"). Calculates their
-# fingerprint and uses it to check if already loaded in a running ssh-agent,
-# adds them if (and only if) not already loaded.
+# Auto-launching SSH agent for use with git.
 #
-# NOTE: Must be sourced into current session!
+# Intended to be sourced into a shell session, e.g. from ~/.profile script.
+# Creates an alias "ssh-init", to be able to easily re-run this script
+# manually, which is necessary after lifetime of added identities has expired.
 #
-# Based on: https://help.github.com/en/articles/working-with-ssh-key-passphrases#auto-launching-ssh-agent-on-git-for-windows
+# This starts an ssh-agent process if not already running, and adds all
+# identities found for current user that are not already loaded. Considers all
+# key files in current user's ~/.ssh, assuming filename prefix "id_" but not
+# suffix "".pub" (e.g. "id_rsa"). Calculates their fingerprint and uses it to
+# check if already loaded in a running ssh-agent, adds them if (and only if)
+# not already loaded. Its purpose is to not only avoid having to execute
+# ssh-add once for each identity, but also to be able to re-run it at will to
+# ensure agent is running and identities are loaded without having to re-enter
+# password for keys that are already loaded.
+#
+# Based on article on GitHub Help:
+# https://docs.github.com/en/authentication/connecting-to-github-with-ssh/working-with-ssh-key-passphrases#auto-launching-ssh-agent-on-git-for-windows
 #
 
 # Check environment variable SSH_AUTH_SOCK.

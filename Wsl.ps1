@@ -3612,7 +3612,7 @@ function Install-VpnKit
 							if (-not $DistroInfo.PackageSourceCodeName) {
 								$DownloadUrl = $null
 							} else {
-								$DownloadUrl = Invoke-WebRequest -Uri "https://packages.debian.org/$($DistroInfo.PackageSourceCodeName)/amd64/${Package}/download" -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "https?://ftp.no.debian.org/debian" } | Select-Object -First 1
+								$DownloadUrl = Invoke-WebRequest -Uri "https://packages.debian.org/$($DistroInfo.PackageSourceCodeName)/amd64/${Package}/download" -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "https?://ftp.de.debian.org/debian" } | Select-Object -First 1
 								if (-not $DownloadUrl) {
 									# Try once more from the security repo, in case it is there (libssl1.1 will be there)!
 									$DownloadUrl = Invoke-WebRequest -Uri "https://packages.debian.org/$($DistroInfo.PackageSourceCodeName)/amd64/${Package}/download" -UseBasicParsing -DisableKeepAlive | Select-Object -ExpandProperty Links | Select-Object -ExpandProperty href | Where-Object { $_ -match "https?://security.debian.org/debian-security" } | Select-Object -First 1
@@ -3754,7 +3754,7 @@ function Install-VpnKit
 				if ($LastExitCode -eq 0) {
 					Write-Verbose "Skipping installation of package 'socat' because it is already present: ${SocatStatus}"
 				} else {
-					$DownloadMirror = 'https://mirror.neuf.no/archlinux' # Note: Hard coded mirror url!
+					$DownloadMirror = 'https://fastly.mirror.pkgbuild.com' # Note: Hard coded mirror url!
 					$WorkingDirectory = Get-Directory -Path $WorkingDirectory -Create
 					$TempDirectory = New-TempDirectory -Path $WorkingDirectory
 					try
