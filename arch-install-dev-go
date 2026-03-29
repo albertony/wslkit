@@ -1,13 +1,15 @@
 #!/bin/sh
 #
-# Installs development environment for Go (golang), including gcc (for cgo),
-# and supporting tools such as git.
+# Installs complete development environment for Go (golang).
+#
+# Includes gcc, for cgo support, and supporting tools such as diff, ssh and git.
 #
 # Also performs refresh of package database and upgrade of existing packages to ensure
 # we get latest versions. Runs with the -Syu option, which seems to be the recommended
 # approach for normal upgrades on arch, not -Syuu which may also downgrade packages. In
 # any case, remember to either do both --refresh (-y) and --sysupgrade (-u), or none of
-# them, at least never --refresh (-y) which will easily lead to the partial upgrades syndrome!
+# them, at least never --refresh (-y) which will easily lead to a bad state of partial
+# upgrades!
 #
 # Passes any script arguments to the pacman commands, so can execute script with
 # --noconfirm for instance to run non-interactively proceeding without prompting
@@ -44,7 +46,6 @@ fi
 #    gopls
 #    staticcheck
 
-
 #    `# Fuse library to be able to use cgofuse` \
 #    fuse2
 
@@ -53,7 +54,6 @@ fi
 #    python-pylint \
 #    python-pytest \
 #    ipython \
-
 
 #    `# Full CMake/Ninja build system for C++` \
 #    `# Ninja build-system` \

@@ -65,7 +65,7 @@ fi
 restart_required=0
 
 echo "Minimizing filesystem..."
-. "${0}-minimize-${ARCH_SETUP_LANGUAGE:-"C"}"
+. "${0}-minimize-${ARCH_SETUP_LANGUAGE:-C}"
 
 echo
 echo "Configuring pacman..."
@@ -85,7 +85,7 @@ echo "Configuring sudo..."
 
 echo
 echo "Configuring bash shell environment"
-. "$(dirname ${0})/bash-setup"
+. "$(dirname "${0}")/bash-setup"
 
 echo
 echo Done
@@ -96,3 +96,4 @@ if [ "$restart_required" -ne 0 ]; then
         echo "      From WSL host, execute: wsl --shutdown"
     fi
 fi
+unset restart_required

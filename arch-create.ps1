@@ -33,12 +33,33 @@ param (
 	# packages. If parameter -UseLatestImageFromMirror is also specified, then this will also be used to download
 	# the WSL image itself.
 	# Note that this must be the address only to the root of the mirror server and without trailing slash, as
-	# "/$repo/os/$arch" will be appended when written to the mirrorlist file. The implicit default in setup scripts
+	# "/$repo/os/$arch" will be appended when written to the mirrorlist file. The implicit default in the setup scripts
 	# corresponds to "https://fastly.mirror.pkgbuild.com", which is a worldwide CDN mirror from Fastly, a company which
-	# is a sponsor of the Arch project providing Hosting/CDN services. This mirror is backed by the mirror.pkgbuild.com
-	# services run from the Arch Linux Teams own infrastructure. This is also the same mirror that the official Arch
-	# WSL distro has preconfigured (but which we replace).
+	# is a sponsor of the Arch project providing Hosting/CDN services. This mirror is not a traditional mirror, but a
+	# Content Delivery Network service, caching content directly from the authorative source mirror.pkgbuild.com that
+	# is running on the Arch Linux Team's own infrastructure. This is a fast and highly recommended worldwide mirror,
+	# used a lot recently as the default mirror. The official Arch WSL distro has this preconfigured (but we replace it).
 	[string] $Mirror,
+
+	# Optional credentials of regular user to create as default user, instead of the built-in root.
+	# If supplying only a username, as a string value, then PowerShell will show Get-Credential prompt
+	# automatically to make it into a [pscredential] value, and you will then be able to set
+	# a password (and edit the username) in the prompt, before continuing. You may choose to leave
+	# the password empty to create user without a password.
+	# Parameter -CreateUser is implied.
+	[pscredential] $User,
+
+	# Install from an already downloaded distribution image.
+	# The argument is assumed to be the path to an official Arch Linux installer file, e.g.
+	# "archlinux-2026.03.01.160197.wsl", but it will be imported regardless, so can in theory also be the plain
+	# bootstrapper archive.
+	# This will perform a simple import, instead of the more standard method of installing the built-in distribution
+	# identifier "archlinux" using the WSL install command.
+	# This is similar to option -UseLatestImageFromMirror, where the image is first downloaded.
+	# Note that the import command in WSL requires the destination to be specified, and since we do not know the
+	# default without considering the general.distributionInstallPath parameter in .wslconfig, we require the
+	# script parameter -Destination to be specified as well.
+	[string] $Source,
 
 	# Download the distribution image manually from the repository mirror and import it. The default is to use the
 	# more standard method of installing the built-in distribution identifier "archlinux" using the WSL install command,
@@ -58,16 +79,9 @@ param (
 	[switch] $AppendNameToDestination,
 
 	# Optionally create regular user as default user, instead of the built-in root.
+	# This is implied if credentials are supplied in parameter -User.
 	# If not credentials are supplied in parameter -User, an interactive prompt will be shown.
 	[switch] $CreateUser,
-
-	# Optional credentials of regular user to create as default user, instead of the built-in root.
-	# If supplying only a username, as a string value, then PowerShell will show Get-Credential prompt
-	# automatically to make it into a [pscredential] value, and you will then be able to set
-	# a password (and edit the username) in the prompt, before continuing. You may choose to leave
-	# the password empty to create user without a password.
-	# Parameter -CreateUser is implied.
-	[pscredential] $User,
 
 	[switch] $PlainInstall, # Do not run the setup script but leave the distribution in a default, plain, uninitialized state.
 	[switch] $SetAsDefaultDistribution, # Set this distribution as the default for WSL.
@@ -86,6 +100,19 @@ if ($Destination) {
 	}
 	if (Test-Path -LiteralPath $Destination) {
 		throw "Destination already exists"
+	}
+} elseif ($UseLatestImageFromMirror) {
+	throw "Parameter 'Destination' is required when parameter 'UseLatestImageFromMirror' is used"
+} elseif ($Source) {
+	throw "Parameter 'Destination' is required when parameter 'Source' is used"
+}
+if ($Source) {
+	if ($UseLatestImageFromMirror) {
+		throw "Parameters 'Source' and 'UseLatestImageFromMirror' cannot be used together"
+	}
+	$Source = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Source)
+	if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
+		throw "Source does not exist or is not a file"
 	}
 }
 if (($CreateUser -or $User) -and ($Force -or $PSCmdlet.ShouldProcess("$(if($User){$User.UserName}else{'Prompt for credential'})", "Create user"))) {
@@ -112,23 +139,28 @@ if (($CreateUser -or $User) -and ($Force -or $PSCmdlet.ShouldProcess("$(if($User
 }
 
 if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(Default destination)'}), "Create Arch Linux WSL distribution '${Name}'")) {
-	if ($UseLatestImageFromMirror) {
-		if (-not $Destination) {
-			throw "Parameter 'Destination' is required when parameter 'UseLatestImageFromMirror' is used"
+	if ($Source) {
+		Write-Host "Installing into custom destination `"${Destination}`"..."
+		wsl.exe --import $Name $Destination $Source
+		if ($LastExitCode -ne 0) {
+			throw "WSL command failed (error code ${LastExitCode})"
 		}
+	}
+	elseif ($UseLatestImageFromMirror) {
 		# Download the distribution image manually from a package repository mirror and import it.
 		$ArchiveName = 'archlinux.wsl'
-		if ($Mirror) {
-			# Use the same mirror that we will configure pacman to use when installing packages.
-			$ArchiveUrl = "${Mirror}/wsl/latest/${ArchiveName}"
-		}
-		else {
+		$WslMirror = $Mirror # Use the same mirror that we will configure pacman to use when installing packages.
+		if (-not $Mirror) {
 			# By default we use the worldwide CDN mirror from Fastly, the same as the official WSL repository uses
 			# (https://raw.githubusercontent.com/microsoft/WSL/refs/heads/master/distributions/DistributionInfo.json),
 			# and the same as the Arch WSL distro has preconfigured for pacman to use when installing packages.
-			$ArchiveUrl = "https://fastly.mirror.pkgbuild.com/wsl/latest/${ArchiveName}"
+			# Note: Not setting it as $Mirror, because that will be supplied to setup and set as pacman mirror as well,
+			# we could do that, but here we don't and instead let that script use its own implicit default (which
+			# happens to be the same currently).
+			$WslMirror = 'https://fastly.mirror.pkgbuild.com'
 		}
-		Write-Host "Downloading latest image..."
+		Write-Host "Downloading latest image from mirror `"${WslMirror}`"..."
+		$ArchiveUrl = "${WslMirror}/wsl/latest/${ArchiveName}"
 		$ArchiveFile = New-TemporaryFile
 		try {
 			$ExpectedHash = Invoke-WebRequest -Uri "${ArchiveUrl}.SHA256" -UseBasicParsing -DisableKeepAlive | Select-String -Pattern "^(.*?)\s+${ArchiveName}$" | Select-Object -ExpandProperty Matches | Select-Object -ExpandProperty Groups | Select-Object -Index 1 | Select-Object -ExpandProperty Value
@@ -140,7 +172,7 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 			if ($ActualHash -ne $ExpectedHash) {
 				throw "Checksum mismatch in downloaded image archive ${ArchiveName}: Expected ${ExpectedHash}, but was ${ActualHash}"
 			}
-			Write-Host "Installing into destination `"${Destination}`"..."
+			Write-Host "Installing into custom destination `"${Destination}`"..."
 			wsl.exe --import $Name $Destination $ArchiveFile.FullName
 			if ($LastExitCode -ne 0) {
 				throw "WSL command failed (error code ${LastExitCode})"
@@ -153,7 +185,7 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 	else {
 		# Install the official Arch Linux WSL Image identifier "archlinux".
 		if ($Destination) {
-			Write-Host "Installing into destination `"${Destination}`"..."
+			Write-Host "Installing into custom destination `"${Destination}`"..."
 			wsl.exe --install archlinux --name $Name --location $Destination --no-launch
 		}
 		else {
@@ -205,13 +237,20 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 	# Create additional (non-root) user and set it as the default user.
 	if ($User) {
 		Write-Host "Creating user `"$($User.UserName)`"..."
-		wsl.exe --distribution $Name --exec sh -c "useradd --create-home --groups wheel $($User.UserName)"
+		wsl.exe --distribution $Name --exec useradd --create-home --groups wheel $User.UserName # On Arch useradd is a native binary so can use --exec and no need to go through a shell
 		if ($LastExitCode -ne 0) {
 			throw "WSL command failed (error code ${LastExitCode})"
 		}
 		if ($User.Password.Length -gt 0) {
 			Write-Host "Setting password for user..."
-			wsl.exe --distribution $Name --exec sh -c "echo \`"$($User.UserName):$($User.GetNetworkCredential().Password)\`" | chpasswd"
+			# Note: Password will be decrypted to plain text in memory and appear on the PowerShell pipeline,
+			# but will be piped into the wsl shell process, thus not be visible in process list or shell history.
+			# On Arch chpasswd is a native binary, so could have used --exec and avoid going through a shell:
+			#   "$($User.UserName):$($User.GetNetworkCredential().Password)" | wsl.exe --distribution $Name --exec chpasswd
+			# However, the problem is that PowerShell terminates the pipeline to external command with native line ending,
+			# "`r`n", that would then end up including the "`r" as part of the password, and we therefore use the
+			# shell to trim that off using the tr command (assuming it is available).
+			"$($User.UserName):$($User.GetNetworkCredential().Password)" | wsl.exe --distribution $Name --exec sh -c "tr -d '\r' | chpasswd"
 			if ($LastExitCode -ne 0) {
 				throw "WSL command failed (error code ${LastExitCode})"
 			}
@@ -226,7 +265,7 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 	if (-not $PlainInstall -and ($Force -or $PSCmdlet.ShouldProcess('mirrorlist, wsl-distribution.conf, archlinux.ico, first-setup.sh', "Cleanup default wsl configuration from distribution '${Name}'"))) {
 		# Deleting the custom mirrorlist that the WSL distribution bundles, as well as WSL specific OOBE-related and shortcut icon files.
 		# Leaving behind /etc/wsl.conf (which sets option boot.systemd=true) and /etc/locale.conf (which sets proper default LANG=C.UTF-8).
-		wsl.exe --user root rm /etc/pacman.d/mirrorlist /etc/wsl-distribution.conf /usr/lib/wsl/archlinux.ico /usr/lib/wsl/first-setup.sh
+		wsl.exe --distribution $Name --user root rm /etc/pacman.d/mirrorlist /etc/wsl-distribution.conf /usr/lib/wsl/archlinux.ico /usr/lib/wsl/first-setup.sh
 	}
 
 	# Run the complete setup script from this repo, which minimizes filesystem, configures pacman, installs packages,
@@ -235,13 +274,12 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 	# Note: This is an interactive shell script running from within the distro, so you will need to confirm,
 	# all should normally be accepted.
 	if (-not $PlainInstall -and ($Force -or $PSCmdlet.ShouldProcess('./arch-setup', "Run initial setup of distribution '${Name}'"))) {
-		Write-Host "`nRunning Initial setup script (./arch-setup)...`n"
-		if ($Force -or $PSCmdlet.ShouldProcess('./arch-setup', "Activate non-interactive mode with parameter '--noconfirm'")) {
-			wsl.exe --cd $PSScriptRoot --user root ARCH_SETUP_LANGUAGE=C ARCH_SETUP_MIRROR=${Mirror} ARCH_SETUP_SUDO_NOPASSWD=$(if($User.Password.Length -eq 0){'X'}) ./arch-setup --noconfirm
-		}
-		else {
-			wsl.exe --cd $PSScriptRoot --user root ARCH_SETUP_LANGUAGE=C ARCH_SETUP_MIRROR=${Mirror} ARCH_SETUP_SUDO_NOPASSWD=$(if($User.Password.Length -eq 0){'X'}) ./arch-setup
-		}
+		Write-Host
+		Write-Host "Running initial setup script (arch-setup with options: $((@('C locale', $(if($Mirror){"pacman mirror ${Mirror}"}), $(if($User.Password.Length -eq 0){"passwordless sudo"})) | Where-Object {$_}) -join ', '))..."
+		Write-Host
+		wsl.exe --distribution $Name --cd $PSScriptRoot --user root `
+			ARCH_SETUP_LANGUAGE=C ARCH_SETUP_MIRROR=${Mirror} ARCH_SETUP_SUDO_NOPASSWD=$(if($User.Password.Length -eq 0){'X'}) `
+			./arch-setup $(if($Force -or $PSCmdlet.ShouldProcess('./arch-setup', "Activate non-interactive mode with parameter '--noconfirm'")) { '--noconfirm' })
 		if ($LastExitCode -ne 0) {
 			throw "WSL command failed (error code ${LastExitCode})"
 		}

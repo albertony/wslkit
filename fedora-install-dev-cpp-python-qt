@@ -66,7 +66,7 @@ if ! $dnf --nodocs install \
     dlib-devel \
     libpng-devel \
     libjpeg-devel \
-    libsq3-devel
+    libsq3-devel \
     `# Doctest headers and libraries` \
     doctest-devel
 then

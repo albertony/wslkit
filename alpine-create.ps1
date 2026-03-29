@@ -130,7 +130,7 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 		Write-Host "Creating user `"$($User.UserName)`"..."
 		# Must use adduser command, useradd command is not available before installing package shadow.
 		# No sudo by default, so user with empty password will not be a problem.
-		wsl.exe --distribution $Name --exec sh -c "adduser --disabled-password --gecos '' $($User.UserName)" # Note: Needed the sh -c workaround for it to accept arguments!
+		wsl.exe --distribution $Name --exec sh -c "adduser --disabled-password --gecos '' $($User.UserName)" # On Alpine adduser must run in a shell, so cannot use --exec adduser like on Arch, but also had to use "--exec sh -c" as a workaround for it to accept arguments!
 		if ($LastExitCode -ne 0) {
 			throw "WSL command failed (error code ${LastExitCode})"
 		}
@@ -146,7 +146,7 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 		}
 		if ($User.Password.Length -gt 0) {
 			Write-Host "Setting password for user..."
-			wsl.exe --distribution $Name --exec sh -c "echo \`"$($User.UserName):$($User.GetNetworkCredential().Password)\`" | chpasswd"
+			"$($User.UserName):$($User.GetNetworkCredential().Password)" | wsl.exe --distribution $Name --exec sh -c "tr -d '\r' | chpasswd"
 			if ($LastExitCode -ne 0) {
 				throw "WSL command failed (error code ${LastExitCode})"
 			}

@@ -2590,9 +2590,17 @@ function New-Distro
 							if ($UserCreated) {
 								# Set password - if set (i.e. not empty)
 								if ($User.Password.Length -gt 0) {
-									# Note: Password will be sent in clear text in wsl command line here, and
-									# also in command line within the distro shell!
-									wsl.exe --distribution $Name --exec sh -c "echo \`"$($User.UserName):$($User.GetNetworkCredential().Password)\`" | chpasswd > /dev/null"
+									# OLD: Password will be sent in plain text in wsl command line here, and also in command line within the distro shell,
+									# but will not be stored in any shell history.
+									#wsl.exe --distribution $Name --exec sh -c "echo \`"$($User.UserName):$($User.GetNetworkCredential().Password)\`" | chpasswd > /dev/null"
+									# NEW: Password will be decrypted to plain text in memory and appear on the PowerShell pipeline,
+									# but will be piped into the wsl shell process, thus not be visible in process list or shell history.
+									# On Arch chpasswd is a native binary, so could have used --exec and avoid going through a shell:
+									#   "$($User.UserName):$($User.GetNetworkCredential().Password)" | wsl.exe --distribution $Name --exec chpasswd
+									# However, the problem is that PowerShell terminates the pipeline to external command with native line ending,
+									# "`r`n", that would then end up including the "`r" as part of the password, and we therefore use the
+									# shell to trim that off using the tr command (assuming it is available).
+									"$($User.UserName):$($User.GetNetworkCredential().Password)" | wsl.exe --distribution $Name --exec sh -c "tr -d '\r' | chpasswd > /dev/null"
 									if ($LastExitCode -ne 0) {
 										Write-Warning "Failed to set password (error code ${LastExitCode})"
 									}

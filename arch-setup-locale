@@ -100,17 +100,17 @@ if [ -n "$LANG" ]; then
         # but must in any case make sure it is enabled in /etc/locale.gen because if not it
         # means it will be removed next time locales are regenerated (which happens
         # automatically on glibc updates), so could just as well always (re-)generate.
-        #   if locale --all-locales 2>/dev/null | grep --quiet --fixed-strings --line-regexp "en_US.utf8" ; then # Enabled means it must have been generated!
-        #   if localedef --list-archive | grep --quiet --fixed-strings --line-regexp "en_US.utf8" ; then # Generated means it is enabled!
+        #   if locale --all-locales 2>/dev/null | grep --quiet --fixed-strings --line-regexp "en_US.utf8"; then # Enabled means it must have been generated!
+        #   if localedef --list-archive | grep --quiet --fixed-strings --line-regexp "en_US.utf8"; then # Generated means it is enabled!
         # Note: There are two matches for en_US.UTF-8 UTF-8 in the default template:
         #   "#  en_US.UTF-8 UTF-8" in an example in the header comment, and "#en_US.UTF-8 UTF-8"
         #   in the complete list.
-        if cat /etc/locale.gen | grep --quiet '^\s*en_US.UTF-8 UTF-8\s*$' ; then
+        if grep --quiet '^\s*en_US\.UTF-8 UTF-8\s*$' /etc/locale.gen; then
             echo "Skipping enabling of system locale in /etc/locale.gen: en_US.UTF-8 is already enabled"
-        elif cat /etc/locale.gen | grep --quiet '^\s*#\s*en_US.UTF-8 UTF-8\s*$' ; then
+        elif grep --quiet '^\s*#\s*en_US\.UTF-8 UTF-8\s*$' /etc/locale.gen; then
             echo "Enabling system locale en_US.UTF-8 in /etc/locale.gen (uncommenting)"
             # NEW: Only uncommenting the last of the (by default) two matches:
-            sed --in-place "$(cat /etc/locale.gen | sed --quiet --regexp-extended '/^\s*#\s*(en_US.UTF-8 UTF-8)\s*$/=' | tail --lines=1)"' s/.*/en_US.UTF-8 UTF-8/' /etc/locale.gen
+            sed --in-place "$(sed --quiet --regexp-extended '/^\s*#\s*(en_US\.UTF-8 UTF-8)\s*$/=' /etc/locale.gen | tail --lines=1)"' s/.*/en_US.UTF-8 UTF-8/' /etc/locale.gen
             # OLD: This will replace all (both) occurrences!
             #sed --in-place --regexp-extended 's/^\s*#\s*(en_US.UTF-8 UTF-8)\s*$/\1/' /etc/locale.gen
         else
@@ -119,8 +119,8 @@ if [ -n "$LANG" ]; then
         fi
         locale-gen
         # OLD:
-        #if locale --all-locales 2>/dev/null | grep --quiet --fixed-strings --line-regexp "en_US.utf8" ; then # Enabled means it must have been generated?
-        #    if localedef --list-archive | grep --quiet --fixed-strings --line-regexp "en_US.utf8" ; then # Generated means it is enabled?
+        #if locale --all-locales 2>/dev/null | grep --quiet --fixed-strings --line-regexp "en_US.utf8"; then # Enabled means it must have been generated?
+        #    if localedef --list-archive | grep --quiet --fixed-strings --line-regexp "en_US.utf8"; then # Generated means it is enabled?
         #        echo "Enabling system locale en_US.UTF-8"
         #        # NOTE: If already added to /etc/locale.gen but locale-gen has not been executed,
         #        # this does not consider that and just adds a duplicate!

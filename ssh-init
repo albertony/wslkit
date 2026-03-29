@@ -35,32 +35,34 @@ else
     agent_run_state=2
 fi
 
-if [ ! "$SSH_AUTH_SOCK" ] || [ $agent_run_state = 2 ]; then
+if [ ! "$SSH_AUTH_SOCK" ] || [ "$agent_run_state" = 2 ]; then
     echo "Starting authentication agent"
     eval $(umask 077; ssh-agent -s) && agent_run_state=1
 else
     echo "Authentication agent already running"
 fi
 
-if [ $agent_run_state -lt 2 ]; then
-    for identity_file in $(ls ~/.ssh/id_* | grep -v \.pub$); do
-        if [ $agent_run_state -gt 0 ]; then
+if [ "$agent_run_state" -lt 2 ]; then
+    for identity_file in ~/.ssh/id_*; do
+        [ -f "$identity_file" ] || continue
+        case "$identity_file" in *.pub) continue ;; esac
+        if [ "$agent_run_state" -gt 0 ]; then
             # Agent has no keys, so we just add without further checks
             echo "Adding SSH identity to the authentication agent"
-            if ! ssh-add -t 4h $identity_file; then
+            if ! ssh-add -t 4h "$identity_file"; then
                 echo "Failed!"
             fi
         else
             # Agent already have keys, so we use fingerprint (SHA256 of 43 base64 characters, or SHA512 of 86 base64 characters)
             # to check if the key reprenseted by given identity_file is already loaded.
-            #if ssh-add -L | ssh-keygen -E sha256 -lf /dev/stdin | grep -q $(ssh-keygen -lf $identity_file -E sha256 | grep -o 'SHA256.\{43\}'); then
-            #if ssh-add -L | ssh-keygen -E sha256 -lf /proc/self/fd/0 | grep -q $(ssh-keygen -lf $identity_file -E sha256 | grep -o 'SHA256.\{43\}'); then
+            #if ssh-add -L | ssh-keygen -E sha256 -lf /dev/stdin | grep -q $(ssh-keygen -lf "$identity_file" -E sha256 | grep -o 'SHA256.\{43\}'); then
+            #if ssh-add -L | ssh-keygen -E sha256 -lf /proc/self/fd/0 | grep -q $(ssh-keygen -lf "$identity_file" -E sha256 | grep -o 'SHA256.\{43\}'); then
             # NEW: Since version 7.2 (released on on 2016-02-28), this is now possible by passing - as the file name:
-            if ssh-add -L | ssh-keygen -E sha256 -lf - | grep -q $(ssh-keygen -lf $identity_file -E sha256 | grep -o 'SHA256.\{43\}'); then
+            if ssh-add -L | ssh-keygen -E sha256 -lf - | grep -q "$(ssh-keygen -lf "$identity_file" -E sha256 | grep -o 'SHA256.\{43\}')"; then
                 echo "Identity exists: $identity_file"
             else
                 echo "Adding SSH identity to the authentication agent"
-                if ! ssh-add -t 4h $identity_file; then
+                if ! ssh-add -t 4h "$identity_file"; then
                     echo "Failed!"
                 fi
             fi

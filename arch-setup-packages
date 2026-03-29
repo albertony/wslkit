@@ -40,6 +40,11 @@ fi
 # Force update the package database.
 # Will refresh even if it appear to be up-to-date, due to double --refresh.
 #
+# Note that this is a bit bit dangerous to do without upgrading packages as
+# well, since it may lead to a bad state of partial upgrades, but it is
+# intentional because we want to install/upgrade the keyring package first,
+# before we upgrade all packages.
+#
 echo
 echo "Forcing update of package database..."
 if ! pacman --sync --refresh --refresh "$@"; then
@@ -63,6 +68,11 @@ echo
 echo "Ensuring latest keyring package is installed..."
 if ! pacman --sync --needed "$@" archlinux-keyring; then
     echo "Failed!"
+    echo "NOTE: The package database was previously successfully updated, but due to this"
+    echo "error when attempting to install/upgrade the keyring package, existing packages"
+    echo "have not been upgraded! Make sure to repeat this script until it succeeds, at"
+    echo "least do not install any new packages before existing packages has been"
+    echo "successfully upgraded, or else you may get into a bad state of partial upgrades!"
     exit 1
 fi
 
@@ -81,6 +91,11 @@ echo
 echo "Performing full upgrade/downgrade of packages..."
 if ! pacman --sync --sysupgrade --sysupgrade "$@"; then
     echo "Failed!"
+    echo "NOTE: The package database was previously successfully updated, but since the"
+    echo "upgrading of existing packages failed, make sure to repeat this script until it"
+    echo "succeeds, at least do not install any new packages before existing packages has"
+    echo "been successfully upgraded, or else you may get into a bad state of partial"
+    echo "upgrades!"
     exit 1
 fi
 
@@ -113,7 +128,7 @@ if ! pacman --query --check --quiet tzdata > /dev/null; then
         exit 1
     fi
     echo "Success (ignore all warnings \"could not get file information\")"
-    restart_required=1
+    restart_required=1 # Flag to "caller", i.e. arch-setup when sourcing this script
     echo "NOTICE: Restarting is required for the changes to be applied!"
 else
     echo "Timezone database is complete"
@@ -134,6 +149,8 @@ fi
 #
 # Here we install some additional tools which cannot be assumed to be included
 # in a clean minimal installation, such as sudo, unzip, wget, nano.
+# Could consider 7zip, which is now the official 7-zip.org version, instead of
+# unzip, although it is relatively much bigger (6.25 vs 0.3 MiB).
 #
 # Previously the bootstrap archive did not include the "base" package, e.g.
 # version 2021.02.01 included: pacman, pacman-mirrorlist, ca-certificates, bash,
@@ -176,12 +193,18 @@ fi
 # Uninstall any unrequired packages left behind (orphans).
 # Considering packages that were not explicitly installed, but originally installed as a
 # dependency of other packages, even as an optional dependency due to the double --unrequired.
-# Note: This command will fail when none were found: "argument '-' specified with empty stdin."
 #
 echo
 echo "Cleaning up unrequired packages..."
-echo "* Note that when none are found it is expected to see \"error: argument '-' specified with empty stdin\""
-pacman --query --deps --unrequired --unrequired --quiet | pacman --remove --nosave --recursive "$@" -
+#echo "* Note that when none are found it is expected to see \"error: argument '-' specified with empty stdin\""
+#pacman --query --deps --unrequired --unrequired --quiet | sudo pacman --remove --nosave --recursive "$@" -
+if orphans=$(pacman --query --deps --unrequired --unrequired --quiet) && [ -n "$orphans" ]; then
+    # This works, assuming default IFS lead to correct splitting of argument, and because in Arch:
+    # Package names can contain only alphanumeric characters and any of @, ., _, +, -. Names are not
+    # allowed to start with hyphens or dots. All letters should be lowercase.
+    sudo pacman --remove --nosave --recursive "$@" $orphans
+fi
+unset orphans
 
 #
 # Clean the package database (cache).

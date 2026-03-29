@@ -24,7 +24,7 @@ if [ ${EUID:-$(id -u)} -ne 0 ]; then
 fi
 
 # Localizations
-rm -r /usr/share/locale/*
+rm -r /usr/share/locale/* > /dev/null 2>&1
 # Internationalizations
 find /usr/share/i18n/locales -mindepth 1 -maxdepth 1 -type f -not -name 'C' -not -name 'POSIX' -not -name 'i18n' -not -name 'i18n_ctype' -not -name 'iso14651_t1' -not -name 'iso14651_t1_common' -not -name 'translit_*' -delete
 # Character sets
@@ -32,7 +32,7 @@ find /usr/share/i18n/charmaps -mindepth 1 -maxdepth 1 -type f -not -name UTF-8.g
 # Documentation
 rm -r /usr/share/doc/* /usr/share/info/* /usr/share/gtk-doc/html/* /usr/share/man/* > /dev/null 2>&1
 # Licenses
-rm -r /usr/share/licenses/*
+rm -r /usr/share/licenses/* > /dev/null 2>&1
 # Supplementary files included in the file system root directory of some of the bootstrap distributions:
 # - 2021.01.01 included a README file
 # - 2022.01.01 included files version and pkglist.x86_64.txt, but no README file
@@ -61,7 +61,7 @@ fi
 noextract_import_missing=1
 if command -v grep > /dev/null; then
     # Grep is available, we can use it with a regular expression to be leanient on space characters etc
-    cat /etc/pacman.conf | grep --quiet '^\s*Include\s*=\s*/etc/pacman.d/noextract\s*$' > /dev/null 2>&1
+    grep --quiet '^\s*Include\s*=\s*/etc/pacman.d/noextract\s*$' /etc/pacman.conf
     noextract_import_missing=$?
 else
     # Grep is not available, we search file for exact match of line
@@ -78,3 +78,4 @@ else
     echo "Adding include of /etc/pacman.d/noextract to pacman.conf"
     echo 'Include = /etc/pacman.d/noextract' >> /etc/pacman.conf
 fi
+unset noextract_import_missing

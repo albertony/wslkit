@@ -1,8 +1,9 @@
 #!/bin/sh
 #
-# Installs complete development environment for C++, Python and Qt.
+# Installs complete development environment for C++.
 #
-# Includes supporting tools such as diff, ssh and git.
+# Includes GCC, GDB, CMake, Ninja and Boost, as well as supporting tools like diff,
+# ssh and git.
 #
 # Also performs refresh of package database and upgrade of existing packages to ensure
 # we get latest versions. Runs with the -Syu option, which seems to be the recommended
@@ -34,20 +35,8 @@ if ! sudo pacman --sync --refresh --sysupgrade --needed "$@" \
     openssh \
     `# Git client` \
     git \
-    `# Qt 5 (contains also dependencies of pyside2)` \
-    qt5-base \
-    qt5-charts \
-    `# Python 3 (is also optional dependency of boost for python bindings)` \
-    python \
-    python-numpy \
-    python-pylint \
-    python-pytest \
-    ipython \
-    pyside2 \
     `# Boost headers and libraries (includes dependency boost-libs which is also dependency of gdb via source-highlight)` \
     boost \
-    `# LevelDB headers and libraries (includes dependency snappy)` \
-    leveldb \
     `# Ninja build-system` \
     ninja \
     `# CMake build-system generator` \

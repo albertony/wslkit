@@ -17,7 +17,7 @@
 
 sudo apt-get install --no-install-recommends "$@" \
     `# SSL` \
-    libssl-dev
+    libssl-dev \
     `# Git` \
     git \
     git-lfs \

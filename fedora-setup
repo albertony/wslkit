@@ -37,7 +37,7 @@ echo "Configuring packages..."
 # Note: bash-setup requires find command, which is installed by setup-packages!
 echo
 echo "Configuring bash shell environment"
-. "$(dirname ${0})/bash-setup"
+. "$(dirname "${0}")/bash-setup"
 
 echo
 echo Done

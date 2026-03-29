@@ -34,7 +34,8 @@
 # If necessary, sudo must be added to all pacman commands, exept the
 # "pacman -Qttdq" / "pacman --query --deps --unrequired --unrequired --quiet".
 # Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
-# at least never just --refresh (-y) which will easily lead to the partial upgrades syndrome!
+# at least never just --refresh (-y) which will easily lead to a bad state of partial
+# upgrades!
 #
 # NOTE: Assumes basic tools are already installed, including sudo.
 # Run script ./arch-setup first to ensure this!
@@ -43,6 +44,11 @@
 #
 # Force update the package database.
 # Will refresh even if it appear to be up-to-date, due to double --refresh.
+#
+# Note that this is a bit bit dangerous to do without upgrading packages as
+# well, since it may lead to a bad state of partial upgrades, but it is
+# intentional because we want to install/upgrade the keyring package first,
+# before we upgrade all packages.
 #
 echo
 echo "Forcing update of package database..."
@@ -67,6 +73,11 @@ echo
 echo "Ensuring latest keyring package is installed..."
 if ! sudo pacman --sync --needed "$@" archlinux-keyring; then
     echo "Failed!"
+    echo "NOTE: The package database was previously successfully updated, but due to this"
+    echo "error when attempting to install/upgrade the keyring package, existing packages"
+    echo "have not been upgraded! Make sure to repeat this script until it succeeds, at"
+    echo "least do not install any new packages before existing packages has been"
+    echo "successfully upgraded, or else you may get into a bad state of partial upgrades!"
     exit 1
 fi
 
@@ -85,6 +96,11 @@ echo
 echo "Performing full upgrade/downgrade of packages..."
 if ! sudo pacman --sync --sysupgrade --sysupgrade "$@"; then
     echo "Failed!"
+    echo "NOTE: The package database was previously successfully updated, but since the"
+    echo "upgrading of existing packages failed, make sure to repeat this script until it"
+    echo "succeeds, at least do not install any new packages before existing packages has"
+    echo "been successfully upgraded, or else you may get into a bad state of partial"
+    echo "upgrades!"
     exit 1
 fi
 
@@ -92,12 +108,22 @@ fi
 # Uninstall any unrequired packages left behind (orphans).
 # Considering packages that were not explicitly installed, but originally installed as a
 # dependency of other packages, even as an optional dependency due to the double --unrequired.
-# Note: This command will fail when none were found: "argument '-' specified with empty stdin."
 #
 echo
-echo "Cleaning up unrequired packages..."
-echo "* Note that when none are found it is expected to see \"error: argument '-' specified with empty stdin\""
-pacman --query --deps --unrequired --unrequired --quiet | sudo pacman --remove --nosave --recursive "$@" -
+echo "Searching for unrequired packages..."
+#echo "* Note that when none are found it is expected to see \"error: argument '-' specified with empty stdin\""
+#pacman --query --deps --unrequired --unrequired --quiet | sudo pacman --remove --nosave --recursive "$@" -
+if orphans=$(pacman --query --deps --unrequired --unrequired --quiet) && [ -n "$orphans" ]; then
+    echo "Removing unrequired packages..."
+    # This works, assuming default IFS lead to correct splitting of argument, and because in Arch:
+    # Package names can contain only alphanumeric characters and any of @, ., _, +, -. Names are not
+    # allowed to start with hyphens or dots. All letters should be lowercase.
+    if ! sudo pacman --remove --nosave --recursive "$@" $orphans; then
+        echo "Failed!"
+        exit 1
+    fi
+fi
+unset orphans
 
 #
 # Clean the package database (cache).

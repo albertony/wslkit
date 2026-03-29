@@ -13,18 +13,21 @@
 # check if there are already mirrors enabled in the file (TODO: We could have
 # used gawk, see below, but we may or may not find it..?).
 # On a clean bootstrap archive there is a default mirrorlist file that contains
-# all mirrors commented out. The official Arch WSL distro comes bundles a
-# custom mirrorlist file with two mirrors configured. It currently prefers the
+# all mirrors commented out. The official Arch WSL distro bundles a custom
+# mirrorlist file with two mirrors configured. It currently prefers the
 # worldwide CDN mirror from Fastly, a sponsor of the Arch project providing
-# Hosting/CDN services. This mirror is backed by the mirror.pkgbuild.com
-# services run from the Arch Linux Teams own infrastructure. Previously the
-# default mirrorlist was configured with the Arch Linux Teams own worldwide
-# GeoDNS mirror service, built on top of the mirror.pkgbuild.com services
-# and resolves to a specific regional mirror based on location, and this is
-# still kept but as a fall-back. The bundled mirrorlist file looks like this:
+# Hosting/CDN services. This mirror is not a traditional mirror, but a Content
+# Delivery Network service, caching content directly from the authorative
+# source mirror.pkgbuild.com that is running on the Arch Linux Team's own
+# infrastructure. Previously the default mirrorlist was configured with the
+# Arch Linux Team's own worldwide GeoDNS mirror service, distributing requests
+# directly to a specific regional subdomain of mirror.pkgbuild.com based on
+# location, and this is still kept as a fall-back, but Fastly is now considered
+# a better and faster alternative. The bundled mirrorlist file looks like this:
 #   Server = https://fastly.mirror.pkgbuild.com/$repo/os/$arch
 #   Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
-# Rackspace is another worldwide mirror, historically used a lot as a default:
+# Rackspace is another worldwide mirror with strong reputation, historically
+# used a lot as a default or fall-back:
 #   Server = https://mirror.rackspace.com/archlinux/$repo/os/$arch
 # Here we use the Fastly CDN as default, but variable ARCH_SETUP_MIRROR can be
 # set to use something else. Note that this must be the address only to the
@@ -69,17 +72,18 @@ fi
 # Note: Doing this first, before the "pacman-key --init" command, because it
 # uses this, and if the file does not exist it will report an error (but continue):
 #   error: config file /etc/pacman.d/mirrorlist could not be read: No such file or directory
-echo "Configuring package repository mirror ${ARCH_SETUP_MIRROR:-"https://fastly.mirror.pkgbuild.com"}"
-if [ "$(tail --lines=1 /etc/pacman.d/mirrorlist 2> /dev/null)" == "Server = ${ARCH_SETUP_MIRROR:-"https://fastly.mirror.pkgbuild.com"}/\$repo/os/\$arch" ]; then
+echo "Configuring package repository mirror ${ARCH_SETUP_MIRROR:-https://fastly.mirror.pkgbuild.com}"
+if [ "$(tail --lines=1 /etc/pacman.d/mirrorlist 2> /dev/null)" = "Server = ${ARCH_SETUP_MIRROR:-https://fastly.mirror.pkgbuild.com}/\$repo/os/\$arch" ]; then
     echo "This is already in the mirrorlist file"
 else
     if [ -e "/etc/pacman.d/mirrorlist" ]; then
         mirrorlist_backup=$(mktemp --tmpdir=/etc/pacman.d mirrorlist.old.XXXXX)
         echo "Moving existing mirrorlist file out of the way: $mirrorlist_backup"
-        mv /etc/pacman.d/mirrorlist $mirrorlist_backup
+        mv /etc/pacman.d/mirrorlist "$mirrorlist_backup"
+        unset mirrorlist_backup
     fi
     echo "Writing new mirrorlist file"
-    echo "Server = ${ARCH_SETUP_MIRROR:-"https://fastly.mirror.pkgbuild.com"}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+    echo "Server = ${ARCH_SETUP_MIRROR:-https://fastly.mirror.pkgbuild.com}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
 fi
 
 # Make sure awk is linked
@@ -109,9 +113,11 @@ else
             awk=$(readlink --canonicalize --no-newline /usr/bin/awk)
         fi
         echo "NOTICE: Required awk command missing but found $realawk, so will copy it to $awk"
-        cp $realawk $awk
+        cp "$realawk" "$awk"
     fi
+    unset realawk
 fi
+unset awk
 
 # Initialize pacman
 if [ -e /etc/pacman.d/gnupg ]; then
