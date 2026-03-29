@@ -5,10 +5,10 @@
 # advantage of advances in the WSL software, the modern distribution format, etc, compared to the somewhat obsolete
 # and general purpose script .\Wsl.ps1.
 #
-# This installs the official Arch Linux WSL Image, "archlinux". It is based on the modern distribution format, close
-# to a simple root filesystem archive. It has some extra configuration, sets up pacman automatically on first start,
-# and creates Windows Start menu shortcut and Windows Terminal profile. This script skips most of these extras, and
-# instead runs the arch-setup shell scripts from the same repository as this script.
+# This installs the official Arch Linux WSL Image. It is based on the modern distribution format, which is basically
+# a plain root filesystem archive. It has some extra configuration, sets up pacman automatically on first start, and
+# creates Windows Start menu shortcut and Windows Terminal profile. This script skips most of these extras, and instead
+# runs the arch-setup shell scripts from the same repository as this script.
 #
 # Runs somewhat interactive by default, asking for confirmation of just a few main decisions. Run with parameter -Force
 # to run complete non-interactive. To run fully interactive instead, and be prompted to confirm every relevant steps,
@@ -29,23 +29,29 @@ param (
 	# "${Env:LocalAppData}\wsl".
 	[string] $Destination,
 
-	# Custom package repository mirror to configure in the mirrorlist file for use by pacman, to be used when
-	# installing packages. If parameter -UseLatestImageFromMirror is also specified, then this will also be used to
-	# download the WSL image itself.
+	# Custom repository mirror to configure in the mirrorlist file for use by pacman, to be used when installing
+	# packages. If parameter -UseLatestImageFromMirror is also specified, then this will also be used to download
+	# the WSL image itself.
 	# Note that this must be the address only to the root of the mirror server and without trailing slash, as
 	# "/$repo/os/$arch" will be appended when written to the mirrorlist file. The implicit default in setup scripts
-	# corresponds to "https://fastly.mirror.pkgbuild.com", which is the worldwide CDN mirror from Fastly that the
-	# official Arch WSL distro also has preconfigured (but which we override).
+	# corresponds to "https://fastly.mirror.pkgbuild.com", which is a worldwide CDN mirror from Fastly, a company which
+	# is a sponsor of the Arch project providing Hosting/CDN services. This mirror is backed by the mirror.pkgbuild.com
+	# services run from the Arch Linux Teams own infrastructure. This is also the same mirror that the official Arch
+	# WSL distro has preconfigured (but which we replace).
 	[string] $Mirror,
 
-	# Download the distribution image manually from a package repository mirror and import it, instead of the more
-	# standard method of installing the built-in distribution "archlinux" using the WSL install command, which takes a
-	# predefined image version from a predefined package repository mirror, currently the same Fastly CDN mirror that
-	# the image also has preconfigured for pacman to use for installing packages, given by a distribution registry
-	# in the WSL repository (https://raw.githubusercontent.com/microsoft/WSL/refs/heads/master/distributions/DistributionInfo.json).
-	# This makes it possible to download from a mirror of choice, and also it will use the latest version of the image
-	# to be published by the Arch Linux WSL project, which may not yet have been added to the Microsoft's WSL project's
-	# distribution registry.
+	# Download the distribution image manually from the repository mirror and import it. The default is to use the
+	# more standard method of installing the built-in distribution identifier "archlinux" using the WSL install command,
+	# which takes a predefined image version from a predefined package repository mirror, currently the same Fastly CDN
+	# mirror that the image also has preconfigured for pacman to use for installing packages, configured by a
+	# distribution registry in the WSL repository itself
+	# (https://raw.githubusercontent.com/microsoft/WSL/refs/heads/master/distributions/DistributionInfo.json).
+	# Using this method has the advantage of letting you choose the mirror yourself, and also it will use the absolute
+	# latest version of the image to be published by the Arch Linux WSL project, which may not yet have been added to
+	# the Microsoft's WSL project's distribution registry.
+	# Note that the import command in WSL requires the destination to be specified, and since we do not know the
+	# default without considering the general.distributionInstallPath parameter in .wslconfig, we require the
+	# script parameter -Destination to be specified as well.
 	[switch] $UseLatestImageFromMirror,
 
 	# Optionally append distribution name from parameter -Name as a subdirectory of the path given by -Destination.
@@ -63,7 +69,7 @@ param (
 	# Parameter -CreateUser is implied.
 	[pscredential] $User,
 
-	[switch] $CleanInstall, # Do not run the setup script but leave the distribution in a clean and uninitialized state.
+	[switch] $PlainInstall, # Do not run the setup script but leave the distribution in a default, plain, uninitialized state.
 	[switch] $SetAsDefaultDistribution, # Set this distribution as the default for WSL.
 	[switch] $EnableInterop, # Keep the interop process support enabled.
 	[switch] $CreateStartMenuShortcut, # Keep the default created Windows Start menu shortcut.
@@ -108,7 +114,7 @@ if (($CreateUser -or $User) -and ($Force -or $PSCmdlet.ShouldProcess("$(if($User
 if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(Default destination)'}), "Create Arch Linux WSL distribution '${Name}'")) {
 	if ($UseLatestImageFromMirror) {
 		if (-not $Destination) {
-			throw "Parameter 'UseLatestImageFromMirror'"
+			throw "Parameter 'Destination' is required when parameter 'UseLatestImageFromMirror' is used"
 		}
 		# Download the distribution image manually from a package repository mirror and import it.
 		$ArchiveName = 'archlinux.wsl'
@@ -145,8 +151,7 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 		}
 	}
 	else {
-		# Install hard coded distro "archlinux", the official Arch Linux WSL Image, a modern distribution
-		# format - close to just a root filesystem archive.
+		# Install the official Arch Linux WSL Image identifier "archlinux".
 		if ($Destination) {
 			Write-Host "Installing into destination `"${Destination}`"..."
 			wsl.exe --install archlinux --name $Name --location $Destination --no-launch
@@ -218,7 +223,7 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 		}
 	}
 
-	if (-not $CleanInstall -and ($Force -or $PSCmdlet.ShouldProcess('mirrorlist, wsl-distribution.conf, archlinux.ico, first-setup.sh', "Cleanup default wsl configuration from distribution '${Name}'"))) {
+	if (-not $PlainInstall -and ($Force -or $PSCmdlet.ShouldProcess('mirrorlist, wsl-distribution.conf, archlinux.ico, first-setup.sh', "Cleanup default wsl configuration from distribution '${Name}'"))) {
 		# Deleting the custom mirrorlist that the WSL distribution bundles, as well as WSL specific OOBE-related and shortcut icon files.
 		# Leaving behind /etc/wsl.conf (which sets option boot.systemd=true) and /etc/locale.conf (which sets proper default LANG=C.UTF-8).
 		wsl.exe --user root rm /etc/pacman.d/mirrorlist /etc/wsl-distribution.conf /usr/lib/wsl/archlinux.ico /usr/lib/wsl/first-setup.sh
@@ -229,7 +234,7 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 	# Note: The pacman setup is important since we skipped OOBE (see above).
 	# Note: This is an interactive shell script running from within the distro, so you will need to confirm,
 	# all should normally be accepted.
-	if (-not $CleanInstall -and ($Force -or $PSCmdlet.ShouldProcess('./arch-setup', "Run initial setup of distribution '${Name}'"))) {
+	if (-not $PlainInstall -and ($Force -or $PSCmdlet.ShouldProcess('./arch-setup', "Run initial setup of distribution '${Name}'"))) {
 		Write-Host "`nRunning Initial setup script (./arch-setup)...`n"
 		if ($Force -or $PSCmdlet.ShouldProcess('./arch-setup', "Activate non-interactive mode with parameter '--noconfirm'")) {
 			wsl.exe --cd $PSScriptRoot --user root ARCH_SETUP_LANGUAGE=C ARCH_SETUP_MIRROR=${Mirror} ARCH_SETUP_SUDO_NOPASSWD=$(if($User.Password.Length -eq 0){'X'}) ./arch-setup --noconfirm

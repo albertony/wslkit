@@ -59,7 +59,7 @@ if (Test-Path -LiteralPath $Destination) {
 }
 if (($CreateUser -or $User) -and ($Force -or $PSCmdlet.ShouldProcess("$(if($User){$User.UserName}else{'Prompt for credential'})", "Create user"))) {
 	# Repeat while:
-	# - Username given but is not valid (ValidateScript above are still associated with the $User variable)
+	# - Username given but is not valid
 	# - Username given, but no password, and user confirms the intention was not passwordless user (which is problematic on systems with sudo, but there is no sudo by default in Alpine, and it os only available from a community package)
 	# - Credential prompt aborted, and user confirms that the intention is still to create a user
 	do {
@@ -144,7 +144,7 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 		if ($LastExitCode -ne 0) {
 			throw "WSL command failed (error code ${LastExitCode})"
 		}
-		if ($User.GetNetworkCredential().Password) {
+		if ($User.Password.Length -gt 0) {
 			Write-Host "Setting password for user..."
 			wsl.exe --distribution $Name --exec sh -c "echo \`"$($User.UserName):$($User.GetNetworkCredential().Password)\`" | chpasswd"
 			if ($LastExitCode -ne 0) {

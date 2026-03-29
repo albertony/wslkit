@@ -4,13 +4,8 @@
 #
 # Assuming this script is run immediately after a clean install, we must ensure
 # that pacman is configured to be able to install the packages we want.
-# Therefore we start by intializing the pacman keyring, and then configures url
-# to a package repository mirror.
-#
-# On a clean system installed from bootstrap archive there should be no keys,
-# i.e. no folder /etc/pacman.d/gnupg, but in case we have tried before without
-# luck we delete it which forces resetting of all keys as described here:
-# https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys
+# Therefore we start by configuring a package repository mirror, and then
+# initialize the pacman keyring.
 #
 # When setting mirror, this just moves away any existing mirrorlist file by
 # adding suffix .old.<random>, and then creates a new file with a single
@@ -21,8 +16,11 @@
 # all mirrors commented out. The official Arch WSL distro comes bundles a
 # custom mirrorlist file with two mirrors configured. It currently prefers the
 # worldwide CDN mirror from Fastly, a sponsor of the Arch project providing
-# Hosting/CDN services. Previously it used their own worldwide GeoDNS mirror
-# service, which resolves to an actual mirror based on location, and this is
+# Hosting/CDN services. This mirror is backed by the mirror.pkgbuild.com
+# services run from the Arch Linux Teams own infrastructure. Previously the
+# default mirrorlist was configured with the Arch Linux Teams own worldwide
+# GeoDNS mirror service, built on top of the mirror.pkgbuild.com services
+# and resolves to a specific regional mirror based on location, and this is
 # still kept but as a fall-back. The bundled mirrorlist file looks like this:
 #   Server = https://fastly.mirror.pkgbuild.com/$repo/os/$arch
 #   Server = https://geo.mirror.pkgbuild.com/$repo/os/$arch
@@ -34,12 +32,16 @@
 # "https://fastly.mirror.pkgbuild.com", as "/$repo/os/$arch" will be appended
 # when written to the mirrorlist file.
 #
+# On a clean system installed from bootstrap archive there should be no keys,
+# i.e. no folder /etc/pacman.d/gnupg, but in case we have tried before without
+# luck we delete it which forces resetting of all keys as described here:
+# https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys
+#
 # When using the official WSL distro a similar task may have already been done:
 # It has preconfigured a couple of default urls in the bundled mirrorlist file,
 # and on first startup it initializes the pacman keyring. In this case we will
 # still just reset all keys (although unnecessary at this point) and create a
-# new mirrorlist file (with
-# our own preferred urls), as described above.
+# new mirrorlist file (with our own preferred urls), as described above.
 #
 # The "pacman-key --init" command executed below will on a clean install of
 # bootstrap archive as of 2021.02.01 report an error due to missing awk

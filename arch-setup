@@ -45,7 +45,9 @@
 #   and without trailing slash, as "/$repo/os/$arch" will be appended when
 #   written to the mirrorlist file. The default corresponds
 #   "https://fastly.mirror.pkgbuild.com", which is the worldwide CDN mirror
-#   from Fastly that the official Arch WSL distro already has preconfigured.
+#   from Fastly, backed by the mirror.pkgbuild.com services run from the Arch
+#   Linux Teams own infrastructure. This is the same mirror that the official
+#   Arch WSL distro alrready has preconfigured, but we always replace it.
 # - ARCH_SETUP_SUDO_NOPASSWD: Set non-empty to configure sudo to be allowed
 #   without password.
 #
