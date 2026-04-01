@@ -1,0 +1,93 @@
+#!/bin/sh
+#
+# Uninstalls development environment for Claude Code.
+#
+# This cleans up as much as possible from what an installation using script
+# arch-install-dev-claude does. Note that it may be too invasive for other
+# scenarios. It's primary use case is for testing Claude Code installations
+# etc.
+#
+# Removes the application executables and the global/user configuration. Also
+# removes any remaining empty directories from the user home, assuming if they
+# are now empty it was Claude Code that created them. The directories
+# considered are commonly used Linux directories but does not exist by default
+# in plain Arch Linux filesystem, and Claude Code installer creates them during
+# the install, so should be safe and get us most cleanly back to original state
+# if we delete them.
+#
+# Any project directories you have worked with from Claude Code may have gotten
+# their own .claude subdirectory with project-specific configuration files.
+# These are of course not cleaned up by this script.
+#
+
+# Verify not running as root, since this uninstalls Claude Code for the current user.
+if [ ${EUID:-$(id -u)} -eq 0 ]; then
+    echo 'Please do not run this script as root'
+    exit 1
+fi
+
+# Remove the application executables.
+echo "Removing application executables..."
+rm --force "${HOME}/.local/bin/claude" # Symlink to the current version of the application executable
+rm --recursive --force "${HOME}/.local/share/claude" # All versions of the application executable
+
+# Remove configuration.
+echo "Removing configuration..."
+rm --force "${HOME}/.claude.json" # Remove user preferences, OAuth session, state etc.
+rm --recursive --force "${HOME}/.claude" # User settings, backups, downloads, cache
+rm --recursive --force "${HOME}/.local/state/claude" # Locks
+rm --recursive --force "${HOME}/.cache/claude" # Cache
+rm --recursive --force "${HOME}/.cache/claude-cli-nodejs" # Cache
+
+# Cleanup remaining empty directories, assuming if they are now empty it was
+# Claude Code installer that created them. These directories do not exist by
+# default in plain Arch Linux filesystem, and Claude Code installer creates
+# them during the install.
+echo "Cleaning up remaining empty directories..."
+find "${HOME}/.local" -type d -empty -delete 2> /dev/null
+find "${HOME}/.cache" -type d -empty -delete 2> /dev/null
+# Alternative, pinpointing known subdirectories:
+#rmdir "${HOME}/.local/bin" 2> /dev/null
+#rmdir "${HOME}/.local/share" 2> /dev/null
+#rmdir "${HOME}/.local/state" 2> /dev/null
+#rmdir "${HOME}/.local" 2> /dev/null
+#rmdir "${HOME}/.cache/claude-cli-nodejs" 2> /dev/null
+#rmdir "${HOME}/.cache" 2> /dev/null
+
+echo "Cleaning up PATH variable..."
+if [ ! -d "${HOME}/.local/bin" -a -f "${HOME}/.bashrc" ]; then
+    if grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
+        sed --in-place '/^export PATH="\${HOME}\/\.local\/bin:\${PATH}"$/d' "${HOME}/.bashrc"
+        echo "Removed from '~/.bashrc' the entry that added the now-removed '~/.local/bin' to PATH"
+    fi
+fi
+
+# Claude Code installer also creates a file ~/.config/git/ignore (if not exists),
+# and adds a line '**/.claude/settings.local.json'.
+echo "Cleaning up global git ignore..."
+if [ -f "${HOME}/.config/git/ignore" ]; then
+    if grep --quiet '^\*\*/\.claude/settings\.local\.json$' "${HOME}/.config/git/ignore"; then
+        sed --in-place '/^\*\*\/\.claude\/settings\.local\.json$/d' "${HOME}/.config/git/ignore"
+        echo "Removed line '**/.claude/settings.local.json' from file '~/.config/git/ignore'"
+        if [ ! -s "${HOME}/.config/git/ignore" ]; then
+            echo "The file '~/.config/git/ignore' is now empty so deleting it"
+            rm "${HOME}/.config/git/ignore"
+            rmdir "${HOME}/.config/git" 2> /dev/null
+            rmdir "${HOME}/.config" 2> /dev/null
+        fi
+    fi
+    if [ -f "${HOME}/.config/git/ignore" ] && grep --quiet '/\.claude/' "${HOME}/.config/git/ignore"; then
+        echo "WARNING: The global git ignore file '~/.config/git/ignore' still contains a path containing '/.claude/' which must be cleaned up manually"
+    fi
+fi
+
+# This install script installs packages for the optional dependencies socat
+# and bubblewrap, so for a clean uninstall we should remove them. But it may
+# be a bit risky, as they could have been already installed when we installed
+# Claude, and also others may now depend on them! However, unless this script
+# is executed with argument --noconfirm, the user will be prompted for
+# confirmation.
+echo "Removing packages..."
+if ! sudo pacman --remove --nosave --recursive "$@" socat bubblewrap; then
+    echo "WARNING: Could not remove socat/bubblewrap — they may already be uninstalled or required by another package"
+fi

@@ -1,0 +1,193 @@
+#!/bin/sh
+#
+# Installs development environment for Claude Code.
+#
+# Includes additional dependencies and configuration for running sandboxed
+# mode, and with some initial configuration for privacy and minimized
+# unnecessary network traffic.
+#
+# This installs packages for the optional dependencies socat and bubblewrap,
+# required for the sandboxing mode. Then runs the official Claude Code install
+# script, which performs a user-specific local install with the executable in
+# ~/.local/bin. Finally, creates initial configuration in current user's
+# ~/.claude/settings.json, to have enabled as default the sandbox mode with
+# regular permissions (not auto-allow), disable all MCP servers so that user
+# later must explicitly allow any to be used, and also to disable telemetry,
+# error reporting and feedback prompts.
+#
+# Also performs refresh of package database and upgrade of existing packages to ensure
+# we get latest versions. Runs with the -Syu option, which seems to be the recommended
+# approach for normal upgrades on arch, not -Syuu which may also downgrade packages. In
+# any case, remember to either do both --refresh (-y) and --sysupgrade (-u), or none of
+# them, at least never --refresh (-y) which will easily lead to a bad state of partial
+# upgrades!
+#
+# Passes any script arguments to the pacman commands, so can execute script with
+# --noconfirm for instance to run non-interactively proceeding without prompting
+# user.
+#
+# NOTE: Assumes basic tools are already installed, including sudo.
+# Run script ./arch-setup first to ensure this!
+#
+
+# Verify not running as root, since this installs Claude Code for the current user.
+if [ ${EUID:-$(id -u)} -eq 0 ]; then
+    echo 'Please do not run this script as root'
+    exit 1
+fi
+
+if [ -f "${HOME}/.local/bin/claude" ]; then
+    echo "There is an existing file '~/.local/bin/claude' so Claude Code is probably already installed!"
+    exit 1
+fi
+
+if command -v claude > /dev/null 2>&1; then
+    echo "There is an existing command 'claude' so Claude Code is probably already installed!"
+    exit 1
+fi
+
+echo "Updating package database, upgrading existing packages, and installing new packages..."
+if ! sudo pacman --sync --refresh --sysupgrade --needed "$@" socat bubblewrap; then
+    echo "Failed!"
+    exit 1
+fi
+
+echo
+echo "Cleaning package cache..."
+if ! sudo pacman --sync --clean "$@"; then
+    echo "Failed!"
+    exit 1
+fi
+
+# Using the official install script.
+# It is simply a small utility script that downloads an installer executable
+# as a temporary file, verifies published checksums, executes it with argument
+# "install", and then deletes it again. So we could have skipped the
+# intermediate script and done those steps directly as well.
+echo
+echo "Downloading and running Claude Code installer..."
+if command -v curl > /dev/null 2>&1; then
+    if ! (set -o pipefail; curl --fail --silent --show-error --location https://claude.ai/install.sh | bash); then
+        echo "Failed!"
+        exit 1
+    fi
+elif command -v wget > /dev/null 2>&1; then
+    if ! (set -o pipefail; wget --output-document=- https://claude.ai/install.sh | bash); then
+        echo "Failed!"
+        exit 1
+    fi
+else
+    echo "Requires either curl or wget installed" >&2
+    exit 1
+fi
+
+# Write relevant settings to ~/.claude/settings.json:
+# - Enable sandbox, but with regular permissions mode (auto-allow is default).
+# - Disable all MCP servers.
+# - Enable more privacy, minimize interference and unnecessary network traffic:
+#   - Disable telemetry, error reporting and feedback prompts with environment
+#     variables:
+#     - DISABLE_TELEMETRY=1
+#       - Opt out of Statsig telemetry.
+#       - This implicitly also sets CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1.
+#     - DISABLE_FEEDBACK_COMMAND=1
+#       - Disables the /feedback command.
+#     - DISABLE_ERROR_REPORTING=1
+#       - Opt out of Sentry error reporting.
+#     - CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1
+#       - Disable the "How is Claude doing?" session quality surveys.
+#       - This is already implicitly disabled due to DISABLE_TELEMETRY=1, but we
+#         set it anyway for completeness, and just in case.
+#   - Disable auto-updater (this is a bigger question than the above, but for a
+#     consistent environment and minimal network traffic it may make sense to
+#     handle updates manually):
+#     - DISABLE_AUTOUPDATER=1
+#       - This disables automatic updates. By default Claude checks for updates
+#         on startup and periodically while running, and it will download and
+#         install in the background, and they take effect the next time Claude
+#         Code is started.
+#       - One can still trigger updates manually from command line, with
+#         command "claude update".
+#   - Disable everything leading to unnecessary network traffic, which implicitly
+#     includes all of the above:
+#     - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+#       - Equivalent of setting DISABLE_AUTOUPDATER, DISABLE_FEEDBACK_COMMAND,
+#         DISABLE_ERROR_REPORTING, and DISABLE_TELEMETRY. Also since
+#         CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY is implicit when DISABLE_TELEMETRY,
+#         setting CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC will in reality
+#         cover all of the environment variables above! We could therefore remove
+#         all others, but we set them anyway for completeness, and just in case.
+#         Also, should we later decide to keep the auto-updater enabled, we can
+#         no longer use CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, and would
+#         then have to reintroduce all others.
+echo
+echo "Creating initial Claude Code configuration..."
+settings_file="${HOME}/.claude/settings.json"
+if [ ! -f "$settings_file" -o -r "$settings_file" ]; then
+    current=$([ -s "$settings_file" ] && cat "$settings_file")
+    if [ -z "$current" ] || [ "$current" = "{}" ]; then
+        mkdir -p "$(dirname "$settings_file")"
+        cat > "$settings_file" << 'EOF'
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": false
+  },
+  "allowedMcpServers": [],
+  "env": {
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_FEEDBACK_COMMAND": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_AUTOUPDATER": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+  }
+}
+EOF
+    else
+        echo "WARNING: Skipped because existing file '${settings_file}' is not empty"
+    fi
+else
+    echo "WARNING: Skipped because existing file '${settings_file}' is not readable"
+fi
+
+# Ensure the Claude executable is in PATH.
+# It is installed into ~/.local/bin, which is a commonly used directory for
+# user-specific executables, but on Arch Linux it is not in PATH by default.
+# If it is not in PATH, the claude installer will have already warned about this:
+#   Native installation exists but ~/.local/bin is not in your PATH. Run:
+#   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+echo "Ensuring the user-specific installed Claude Code executables are in PATH..."
+if echo "$PATH" | grep --quiet --extended-regexp "(^|:)${HOME}/\.local/bin(:|$)"; then
+    echo 'The current PATH variable already contains the ~/.local/bin directory of current user'
+    if command -v claude > /dev/null 2>&1; then
+        echo "The command 'claude' is available in current shell, trying to verify it by executing 'claude --version'..."
+        if claude --version; then
+            echo "Everything seems ok, but please verify the version output"
+        else
+            echo 'WARNING: Verification of claude command failed'
+        fi
+    else
+        echo "WARNING: The command 'claude' is not available, please inspect your PATH variable and user profile"
+    fi
+else
+    echo 'The current PATH variable does not seem to contain the ~/.local/bin directory of current user'
+    if command -v claude > /dev/null 2>&1; then
+        echo "WARNING: The command 'claude' is available, however, please verify that this is the correct one"
+    else
+        echo "The command 'claude' is not available in current shell either"
+        if [ -f "${HOME}/.bashrc" ]; then
+            if grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
+                echo "The '~/.bashrc' file seem to already add '~/.local/bin' to PATH"
+                echo "Note that the changes will not have effect until you restart the shell"
+            else
+                echo "Updating '~/.bashrc' file to make it add '~/.local/bin' to PATH"
+                echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${HOME}/.bashrc"
+                echo "Note that the changes will not have effect until you restart the shell"
+            fi
+        else
+            echo "WARNING: The configuration file .bashrc does not exist and will not create it so PATH variable will not be updated"
+        fi
+    fi
+fi
