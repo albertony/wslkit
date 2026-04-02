@@ -26,8 +26,11 @@
 #   Checking for updates to latest version...
 #   Successfully updated from 2.1.89 to version 2.1.90
 #
+# This script can be run with argument --dry-run or -n to only check versions,
+# but not update, and not prompt user to ask if an update should be preformed.
 # For completeness with other scripts this script can be executed with argument
-# --noconfirm to run non-interactively proceeding without prompting user.
+# --noconfirm to run non-interactively proceeding without prompting user. This
+# means if there is an update available, it will be installed.
 #
 # SEE ALSO:
 #   https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/bootstrap.sh
@@ -41,15 +44,15 @@ fi
 
 echo "Finding existing version..."
 if ! command -v claude > /dev/null 2>&1; then
-    echo "The command 'claude' command is not available in this shell session" >&2
+    echo "The command 'claude' is not available in this shell session" >&2
     exit 1
 fi
-exiting_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
-if [ -z "$exiting_version" ]; then
+existing_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
+if [ -z "$existing_version" ]; then
     echo "Failed to find existing version" >&2
     exit 1
 fi
-echo "Existing version is ${exiting_version}"
+echo "Existing version is ${existing_version}"
 
 echo "Finding latest version..."
 base_url=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases
@@ -76,13 +79,16 @@ else
     echo "Unable to find published date"
 fi
 echo "Comparing version..."
-if [ "$latest_version" != "$exiting_version" ]; then
+if [ "$latest_version" != "$existing_version" ]; then
     echo "A new version ${latest_version} is available!"
+    if [ "$1" = '--dry-run' ] || [ "$1" = '-n' ]; then
+        exit 2 # Note: Exit code 2 here to indicate not an error but an update was available!
+    fi
     if [ "$1" != '--noconfirm' ]; then
-        read -p "Run 'claude update' to update existing version ${exiting_version} now? [Y/n] " choice
+        read -p "Run 'claude update' to update existing version ${existing_version} now? [Y/n] " choice
         case "$choice" in
         ""|y|Y );;
-        * ) echo "Aborted" >&2;exit 1;;
+        * ) echo "Aborted" >&2; exit 2;; # Note: Exit code 2 here to indicate not an error but an update was available!
         esac
     fi
     echo "Running Claude Code update command..."
@@ -91,5 +97,5 @@ if [ "$latest_version" != "$exiting_version" ]; then
         exit 1
     fi
 else
-    echo "Existing version ${exiting_version} is up to date"
+    echo "Existing version ${existing_version} is up to date"
 fi
