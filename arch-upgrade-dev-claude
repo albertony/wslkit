@@ -1,0 +1,95 @@
+#!/bin/sh
+#
+# Updates an existing Claude Code installation.#
+#
+# By default Claude checks for updates on startup and periodically while
+# running, and it will download and install in the background, and they take
+# effect the next time Claude Code is started. These automatic updates can be
+# disabled.
+#
+# Manual updates can be triggered with command 'claude update'. It will look
+# up latest version, compare with existing version, and update if newer.
+#
+# The main (only) additional thing this script provides, is an update check. It
+# looks up latest version and compares with existing version, but then it asks
+# user if it should proceed with the update. This makes it possible to check
+# for new versions, without necessarily update immediately! If user decides to
+# perform the update, then this is simply done by running 'claude update'
+# command - which of course then will do its own lookup, and also repeat
+# information on output that this script already have logged: When no update it
+# reports:
+#   Current version: 2.1.90
+#   Checking for updates to latest version...
+#   Claude Code is up to date (2.1.90)
+# When there is an update it reports:
+#   Current version: 2.1.89
+#   Checking for updates to latest version...
+#   Successfully updated from 2.1.89 to version 2.1.90
+#
+# For completeness with other scripts this script can be executed with argument
+# --noconfirm to run non-interactively proceeding without prompting user.
+#
+# SEE ALSO:
+#   https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/bootstrap.sh
+#
+
+# Verify not running as root, since this installs Claude Code for the current user.
+if [ ${EUID:-$(id -u)} -eq 0 ]; then
+    echo 'Please do not run this script as root' >&2
+    exit 1
+fi
+
+echo "Finding existing version..."
+if ! command -v claude > /dev/null 2>&1; then
+    echo "The command 'claude' command is not available in this shell session" >&2
+    exit 1
+fi
+exiting_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
+if [ -z "$exiting_version" ]; then
+    echo "Failed to find existing version" >&2
+    exit 1
+fi
+echo "Existing version is ${exiting_version}"
+
+echo "Finding latest version..."
+base_url=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases
+latest_version=$(curl --fail --silent --show-error --location "${base_url}/latest")
+if [ -z "$latest_version" ]; then
+    echo "Failed to fetch latest version" >&2
+    exit 1
+fi
+echo "Latest version is ${latest_version}"
+manifest=$(curl --fail --silent --show-error --location "${base_url}/${latest_version}/manifest.json" | tr -d '\n\r\t' | sed 's/ \+/ /g')
+if [ -z "$manifest" ]; then
+    echo "Failed to fetch version manifest" >&2
+    exit 1
+fi
+manifest_version=$(echo "$manifest" | sed 's/.*"version": "\([^"]*\)".*/\1/')
+if [ "$latest_version" != "$manifest_version" ]; then
+    echo "Version mismatch, expected ${latest_version} but was ${manifest_version}" >&2
+    exit 1
+fi
+manifest_date=$(echo "$manifest" | sed 's/.*"buildDate": "\([^"]*\)".*/\1/')
+if [ -n "$manifest_date" ]; then
+    echo "Latest version was published $(date --date="${manifest_date}" 2> /dev/null) (${manifest_date})"
+else
+    echo "Unable to find published date"
+fi
+echo "Comparing version..."
+if [ "$latest_version" != "$exiting_version" ]; then
+    echo "A new version ${latest_version} is available!"
+    if [ "$1" != '--noconfirm' ]; then
+        read -p "Run 'claude update' to update existing version ${exiting_version} now? [Y/n] " choice
+        case "$choice" in
+        ""|y|Y );;
+        * ) echo "Aborted" >&2;exit 1;;
+        esac
+    fi
+    echo "Running Claude Code update command..."
+    if ! claude update; then
+        echo "Failed!" >&2
+        exit 1
+    fi
+else
+    echo "Existing version ${exiting_version} is up to date"
+fi

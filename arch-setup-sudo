@@ -45,7 +45,7 @@
 
 # Verify running as root (not relying on sudo which may not be installed yet).
 if [ ${EUID:-$(id -u)} -ne 0 ]; then
-    echo 'Please run this script as root'
+    echo 'Please run this script as root' >&2
     exit 1
 fi
 

@@ -53,7 +53,7 @@
 echo
 echo "Forcing update of package database..."
 if ! sudo pacman --sync --refresh --refresh "$@"; then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi
 
@@ -72,12 +72,12 @@ fi
 echo
 echo "Ensuring latest keyring package is installed..."
 if ! sudo pacman --sync --needed "$@" archlinux-keyring; then
-    echo "Failed!"
-    echo "NOTE: The package database was previously successfully updated, but due to this"
-    echo "error when attempting to install/upgrade the keyring package, existing packages"
-    echo "have not been upgraded! Make sure to repeat this script until it succeeds, at"
-    echo "least do not install any new packages before existing packages has been"
-    echo "successfully upgraded, or else you may get into a bad state of partial upgrades!"
+    echo "Failed!" >&2
+    echo "NOTE: The package database was previously successfully updated, but due to this" >&2
+    echo "error when attempting to install/upgrade the keyring package, existing packages" >&2
+    echo "have not been upgraded! Make sure to repeat this script until it succeeds, at" >&2
+    echo "least do not install any new packages before existing packages has been" >&2
+    echo "successfully upgraded, or else you may get into a bad state of partial upgrades!" >&2
     exit 1
 fi
 
@@ -95,12 +95,12 @@ fi
 echo
 echo "Performing full upgrade/downgrade of packages..."
 if ! sudo pacman --sync --sysupgrade --sysupgrade "$@"; then
-    echo "Failed!"
-    echo "NOTE: The package database was previously successfully updated, but since the"
-    echo "upgrading of existing packages failed, make sure to repeat this script until it"
-    echo "succeeds, at least do not install any new packages before existing packages has"
-    echo "been successfully upgraded, or else you may get into a bad state of partial"
-    echo "upgrades!"
+    echo "Failed!" >&2
+    echo "NOTE: The package database was previously successfully updated, but since the" >&2
+    echo "upgrading of existing packages failed, make sure to repeat this script until it" >&2
+    echo "succeeds, at least do not install any new packages before existing packages has" >&2
+    echo "been successfully upgraded, or else you may get into a bad state of partial" >&2
+    echo "upgrades!" >&2
     exit 1
 fi
 
@@ -119,7 +119,7 @@ if orphans=$(pacman --query --deps --unrequired --unrequired --quiet) && [ -n "$
     # Package names can contain only alphanumeric characters and any of @, ., _, +, -. Names are not
     # allowed to start with hyphens or dots. All letters should be lowercase.
     if ! sudo pacman --remove --nosave --recursive "$@" $orphans; then
-        echo "Failed!"
+        echo "Failed!" >&2
         exit 1
     fi
 fi
@@ -128,14 +128,14 @@ unset orphans
 #
 # Clean the package database (cache).
 # Removing packages that are no longer installed to free up disk space.
-# To completely delete the database, also packages that are currently installed, we could
-# add another --clean.
-# This will interactively prompt for confirmation before proceeding, unless --noconfirm
-# is also added.
+# To completely delete the database, also packages that are currently
+# installed, we could add another --clean.
+# This will interactively prompt for confirmation before proceeding, unless
+# --noconfirm is also added.
 #
 echo
 echo "Cleanup package cache..."
 if ! sudo pacman --sync --clean "$@"; then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi

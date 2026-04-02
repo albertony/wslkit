@@ -74,7 +74,7 @@
 #
 
 if ! grep -q '^ID=debian$' /etc/os-release; then
-    echo "This is not a Debian system!"
+    echo "This is not a Debian system!" >&2
     exit 1
 fi
 
@@ -108,16 +108,16 @@ RELEASE_CHANNEL=${1:-${RELEASE_CHANNEL:-stable}}
 echo "Channel: ${RELEASE_CHANNEL}"
 CURRENT_CODENAME=$(sed -rn 's/^VERSION="[0-9]+\s+\((.*)\)"/\1/p' /etc/os-release)
 [ -z "$CURRENT_CODENAME" ] && CURRENT_CODENAME=$(sed -rn 's/^PRETTY_NAME="Debian GNU\/Linux ([0-9]+ )?\(?([a-z]*)(\/[a-z]*)?\)?"/\2/p' /etc/os-release)
-[ -z "$CURRENT_CODENAME" ] && echo "ERROR: Unable to find installed release codename" && exit 1
+[ -z "$CURRENT_CODENAME" ] && echo "ERROR: Unable to find installed release codename" >&2 && exit 1
 CURRENT_VERSION=$(cat /etc/debian_version)
-[ -z "$CURRENT_VERSION" ] && echo "ERROR: Unable to find installed version info" && exit 1
+[ -z "$CURRENT_VERSION" ] && echo "ERROR: Unable to find installed version info" >&2 && exit 1
 echo "Installed version: $CURRENT_VERSION ($CURRENT_CODENAME)"
 
 # Start by updating package cache
 echo
 echo "Loading package index..."
 if ! sudo apt update; then
-    echo "ERROR: Update command failed"
+    echo "ERROR: Update command failed" >&2
     exit 1
 fi
 
@@ -126,20 +126,20 @@ fi
 echo
 echo "Ensuring latest version of wget is installed..."
 if ! sudo apt install wget; then
-    echo "ERROR: Install command failed"
+    echo "ERROR: Install command failed" >&2
     exit 1
 fi
 
 # Fetch release information
 echo
 echo "Fetching latest release information..."
-LATEST_RELEASE=$(wget --quiet --timeout=10 --output-document=- http://deb.debian.org/debian/dists/${RELEASE_CHANNEL}/Release)
+LATEST_RELEASE=$(wget --quiet --timeout=10 --output-document=- https://deb.debian.org/debian/dists/${RELEASE_CHANNEL}/Release)
 LATEST_CODENAME=$(echo "$LATEST_RELEASE" | grep '^Codename:' | cut -d' ' -f2)
-[ -z "$LATEST_CODENAME" ] && echo "ERROR: Unable to find latest release codename" && exit 1
+[ -z "$LATEST_CODENAME" ] && echo "ERROR: Unable to find latest release codename" >&2 && exit 1
 
 LATEST_VERSION=$(echo "$LATEST_RELEASE" | grep '^Version:' | cut -d' ' -f2)
 # If latest version has not reached stable yet, it will not have a version number!
-#[ -z "$LATEST_VERSION" ] && echo "ERROR: Unable to find latest version major.minor" && exit 1
+#[ -z "$LATEST_VERSION" ] && echo "ERROR: Unable to find latest version major.minor" >&2 && exit 1
 [ -z "$LATEST_VERSION" ] && echo "Latest release version info not available, but this can be normal for releases newer than current stable"
 
 echo "Available version: ${LATEST_VERSION:-?} ($LATEST_CODENAME)"
@@ -150,7 +150,7 @@ if [ "$LATEST_CODENAME" = "$CURRENT_CODENAME" ]; then
     # Always run a simple package update just in case.
     echo "No major upgrade available, updating packages..."
     if ! sudo apt upgrade; then
-        echo "ERROR: Upgrade command failed"
+        echo "ERROR: Upgrade command failed" >&2
         exit 1
     fi
     echo
@@ -164,7 +164,7 @@ else
 
     # Get current channel configured for main binary packages source.
     CURRENT_SOURCE_CHANNEL=$(sed -rn 's/^deb\s+https?:\/\/deb.debian.org\/debian\s+([a-z]*)\s+main$/\1/p' /etc/apt/sources.list)
-    [ -z "$CURRENT_SOURCE_CHANNEL" ] && echo "FAILED: Unable to find current configured main package source version codename" && exit 1
+    [ -z "$CURRENT_SOURCE_CHANNEL" ] && echo "FAILED: Unable to find current configured main package source version codename" >&2 && exit 1
 
     if [ "$CURRENT_SOURCE_CHANNEL" = "$LATEST_CODENAME" ]; then
         # Note: In this case we do not want to run simple package update (sudo apt upgrade),
@@ -177,7 +177,7 @@ else
         # Run a simple package update for existing release
         echo "Updating packages to latest version for current release..."
         if ! sudo apt upgrade; then
-            echo "ERROR: Upgrade command failed"
+            echo "ERROR: Upgrade command failed" >&2
             exit 1
         fi
         echo
@@ -203,23 +203,23 @@ else
         read -p "Do you want to continue? [Y/n] " choice
         case "$choice" in
         ""|y|Y );;
-        * ) echo "Aborted";exit 1;;
+        * ) echo "Aborted" >&2;exit 1;;
         esac
         if [ "${LATEST_CODENAME}" = "bullseye" ]; then
             if ! sudo sed -i -r -e "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/" -e "s/security.debian.org\/debian-security\/?\s+${LATEST_CODENAME}\/updates/security.debian.org ${LATEST_CODENAME}-security/" /etc/apt/sources.list; then
-                echo "ERROR: Could not update /etc/apt/sources.list"
+                echo "ERROR: Could not update /etc/apt/sources.list" >&2
                 exit 1
             fi
         else
             if ! sudo sed -i "s/${CURRENT_CODENAME}/${LATEST_CODENAME}/" /etc/apt/sources.list; then
-                echo "ERROR: Could not update /etc/apt/sources.list"
+                echo "ERROR: Could not update /etc/apt/sources.list" >&2
                 exit 1
             fi
         fi
         echo
         echo "Reloading package index for changed source..."
         if ! sudo apt update; then
-            echo "ERROR: Update command failed"
+            echo "ERROR: Update command failed" >&2
             exit 1
         fi
     fi
@@ -230,21 +230,21 @@ else
     # Note: Running upgrade before full-upgrade, and by using 'apt-get upgrade'
     # instead of 'apt upgrade' in this case, as recommended by debian!
     if ! sudo apt-get upgrade; then
-        echo "ERROR: Upgrade command failed"
+        echo "ERROR: Upgrade command failed" >&2
         exit 1
     fi
     if ! sudo apt full-upgrade; then
-        echo "ERROR: Full-upgrade command failed"
+        echo "ERROR: Full-upgrade command failed" >&2
         exit 1
     fi
     if ! sudo apt --purge autoremove; then
-        echo "WARNING: Cleanup of unused dependencies failed with error code $?"
+        echo "WARNING: Cleanup of unused dependencies failed with error code $?" >&2
         exit 1
     fi
 fi
 
 # Package cache cleanup
 if ! sudo apt clean; then
-    echo "WARNING: Cleanup of package cache failed with error code $?"
+    echo "WARNING: Cleanup of package cache failed with error code $?" >&2
     exit 1
 fi

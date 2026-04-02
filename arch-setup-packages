@@ -32,7 +32,7 @@
 
 # Verify running as root (not relying on sudo which may not be installed yet).
 if [ ${EUID:-$(id -u)} -ne 0 ]; then
-    echo 'Please run this script as root'
+    echo 'Please run this script as root' >&2
     exit 1
 fi
 
@@ -48,7 +48,7 @@ fi
 echo
 echo "Forcing update of package database..."
 if ! pacman --sync --refresh --refresh "$@"; then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi
 
@@ -67,12 +67,12 @@ fi
 echo
 echo "Ensuring latest keyring package is installed..."
 if ! pacman --sync --needed "$@" archlinux-keyring; then
-    echo "Failed!"
-    echo "NOTE: The package database was previously successfully updated, but due to this"
-    echo "error when attempting to install/upgrade the keyring package, existing packages"
-    echo "have not been upgraded! Make sure to repeat this script until it succeeds, at"
-    echo "least do not install any new packages before existing packages has been"
-    echo "successfully upgraded, or else you may get into a bad state of partial upgrades!"
+    echo "Failed!" >&2
+    echo "NOTE: The package database was previously successfully updated, but due to this" >&2
+    echo "error when attempting to install/upgrade the keyring package, existing packages" >&2
+    echo "have not been upgraded! Make sure to repeat this script until it succeeds, at" >&2
+    echo "least do not install any new packages before existing packages has been" >&2
+    echo "successfully upgraded, or else you may get into a bad state of partial upgrades!" >&2
     exit 1
 fi
 
@@ -90,12 +90,12 @@ fi
 echo
 echo "Performing full upgrade/downgrade of packages..."
 if ! pacman --sync --sysupgrade --sysupgrade "$@"; then
-    echo "Failed!"
-    echo "NOTE: The package database was previously successfully updated, but since the"
-    echo "upgrading of existing packages failed, make sure to repeat this script until it"
-    echo "succeeds, at least do not install any new packages before existing packages has"
-    echo "been successfully upgraded, or else you may get into a bad state of partial"
-    echo "upgrades!"
+    echo "Failed!" >&2
+    echo "NOTE: The package database was previously successfully updated, but since the" >&2
+    echo "upgrading of existing packages failed, make sure to repeat this script until it" >&2
+    echo "succeeds, at least do not install any new packages before existing packages has" >&2
+    echo "been successfully upgraded, or else you may get into a bad state of partial" >&2
+    echo "upgrades!" >&2
     exit 1
 fi
 
@@ -124,7 +124,7 @@ if ! pacman --query --check --quiet tzdata > /dev/null; then
     echo "Reinstalling timezone database to get missing zoneinfo files"
     echo "NOTICE: Ignore warning \"is up to date -- reinstalling\""
     if ! pacman --sync "$@" tzdata; then
-        echo "Failed!"
+        echo "Failed!" >&2
         exit 1
     fi
     echo "Success (ignore all warnings \"could not get file information\")"
@@ -171,7 +171,7 @@ fi
 echo
 echo "Installing basic packages..."
 if ! pacman --sync --needed "$@" \
-    `# Packages included in meta package "base" which is preinstalled on newer bootstrap images (TODO: Remove)` \
+    `# Packages included in meta package "base" which is preinstalled on newer bootstrap images (safe to remove but will just be skipped)` \
     sed \
     grep \
     tar \
@@ -185,7 +185,7 @@ if ! pacman --sync --needed "$@" \
     wget \
     nano
 then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi
 
@@ -195,28 +195,32 @@ fi
 # dependency of other packages, even as an optional dependency due to the double --unrequired.
 #
 echo
-echo "Cleaning up unrequired packages..."
+echo "Searching for unrequired packages..."
 #echo "* Note that when none are found it is expected to see \"error: argument '-' specified with empty stdin\""
 #pacman --query --deps --unrequired --unrequired --quiet | sudo pacman --remove --nosave --recursive "$@" -
 if orphans=$(pacman --query --deps --unrequired --unrequired --quiet) && [ -n "$orphans" ]; then
+    echo "Removing unrequired packages..."
     # This works, assuming default IFS lead to correct splitting of argument, and because in Arch:
     # Package names can contain only alphanumeric characters and any of @, ., _, +, -. Names are not
     # allowed to start with hyphens or dots. All letters should be lowercase.
-    sudo pacman --remove --nosave --recursive "$@" $orphans
+    if ! pacman --remove --nosave --recursive "$@" $orphans; then
+        echo "Failed!" >&2
+        exit 1
+    fi
 fi
 unset orphans
 
 #
 # Clean the package database (cache).
 # Removing packages that are no longer installed to free up disk space.
-# To completely delete the database, also packages that are currently installed, we could
-# add another --clean.
-# This will interactively prompt for confirmation before proceeding, unless --noconfirm
-# is also added.
+# To completely delete the database, also packages that are currently
+# installed, we could add another --clean.
+# This will interactively prompt for confirmation before proceeding, unless
+# --noconfirm is also added.
 #
 echo
 echo "Cleanup package cache..."
 if ! pacman --sync --clean "$@"; then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi

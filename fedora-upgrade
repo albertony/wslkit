@@ -36,12 +36,12 @@
 
 # Verify running as root
 if [ ${EUID:-$(id -u)} -ne 0 ]; then
-    echo 'Please run this script as root'
+    echo 'Please run this script as root' >&2
     exit 1
 fi
 
 if ! grep -q '^ID=fedora$' /etc/os-release; then
-    echo "This is not a Fedora system!"
+    echo "This is not a Fedora system!" >&2
     exit 1
 fi
 
@@ -51,7 +51,7 @@ if hash dnf > /dev/null 2>&1; then
 elif hash microdnf > /dev/null 2>&1; then
     dnf=microdnf
 else
-    echo 'Package manager dnf or microdnf not found'
+    echo 'Package manager dnf or microdnf not found' >&2
     exit 1
 fi
 
@@ -59,7 +59,7 @@ fi
 # Alternatives: Force sync of all repositories with --refresh? Only perform upgrade-minimal?
 echo "Upgrading packages..."
 if ! $dnf --nodocs update; then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi
 
@@ -83,12 +83,12 @@ else
     if ! hash wget > /dev/null 2>&1; then
         echo "Installing wget, need it for requesting release info..."
         if ! $dnf --nodocs install wget; then
-            echo "ERROR: Install command returned with error code $?"
+            echo "ERROR: Install command returned with error code $?" >&2
             exit 1
         fi
     fi
     LATEST_RELEASE=$(wget --quiet --timeout=10 --output-document=- https://dl.fedoraproject.org/pub/fedora/linux/releases/ | sed --quiet --regexp-extended 's/^.*<a href="([0-9]+)\/">.*$/\1/p' | sort --numeric-sort | tail -1)
-    [ -z "$LATEST_RELEASE" ] && echo "ERROR: Unable to find latest release version" && exit 1
+    [ -z "$LATEST_RELEASE" ] && echo "ERROR: Unable to find latest release version" >&2 && exit 1
     echo "Target/latest release: $LATEST_RELEASE"
     TARGET_RELEASE=$LATEST_RELEASE
 fi
@@ -107,7 +107,7 @@ else
     read -p "Do you want to continue? [Y/n] " choice
     case "$choice" in
     ""|y|Y );;
-    * ) echo "Aborted";exit 1;;
+    * ) echo "Aborted" >&2;exit 1;;
     esac
 
     # Delete unused dependencies
@@ -118,7 +118,7 @@ else
         echo
         echo "Removing unused dependencies..."
         if ! $dnf autoremove; then
-            echo "Failed!"
+            echo "Failed!" >&2
             exit 1
         fi
     fi
@@ -126,7 +126,7 @@ else
     echo
     echo "Cleaning cache and metadata..."
     if ! $dnf clean all; then
-        echo "Failed!"
+        echo "Failed!" >&2
         exit 1
     fi
 
@@ -134,12 +134,12 @@ else
     echo "Upgrading to new release..."
     if [ "$dnf" = "microdnf" ]; then
         if ! $dnf --nodocs --releasever="${TARGET_RELEASE}" update; then
-            echo "Failed!"
+            echo "Failed!" >&2
             exit 1
         fi
     else
         if ! $dnf --nodocs --releasever="${TARGET_RELEASE}" --setopt=deltarpm=false distro-sync; then
-            echo "Failed!"
+            echo "Failed!" >&2
             exit 1
         fi
     fi

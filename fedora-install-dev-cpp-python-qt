@@ -17,7 +17,7 @@
 
 # Verify running as root
 if [ ${EUID:-$(id -u)} -ne 0 ]; then
-    echo 'Please run this script as root'
+    echo 'Please run this script as root' >&2
     exit 1
 fi
 
@@ -27,7 +27,7 @@ if hash dnf > /dev/null 2>&1; then
 elif hash microdnf > /dev/null 2>&1; then
     dnf=microdnf
 else
-    echo 'Package manager dnf or microdnf not found'
+    echo 'Package manager dnf or microdnf not found' >&2
     exit 1
 fi
 
@@ -70,7 +70,7 @@ if ! $dnf --nodocs install \
     `# Doctest headers and libraries` \
     doctest-devel
 then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi
 

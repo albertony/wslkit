@@ -13,7 +13,10 @@
 # ~/.claude/settings.json, to have enabled as default the sandbox mode with
 # regular permissions (not auto-allow), disable all MCP servers so that user
 # later must explicitly allow any to be used, and also to disable telemetry,
-# error reporting and feedback prompts.
+# error reporting and feedback prompts. In addition it disables the built-in
+# auto-updater! This is a bigger decision than the above, but for a consistent
+# environment and minimal network traffic it may make sense to handle updates
+# manually.
 #
 # Also performs refresh of package database and upgrade of existing packages to ensure
 # we get latest versions. Runs with the -Syu option, which seems to be the recommended
@@ -29,62 +32,138 @@
 # NOTE: Assumes basic tools are already installed, including sudo.
 # Run script ./arch-setup first to ensure this!
 #
+# SEE ALSO:
+#   https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/bootstrap.sh
+#
 
 # Verify not running as root, since this installs Claude Code for the current user.
 if [ ${EUID:-$(id -u)} -eq 0 ]; then
-    echo 'Please do not run this script as root'
+    echo 'Please do not run this script as root' >&2
     exit 1
 fi
 
 if [ -f "${HOME}/.local/bin/claude" ]; then
-    echo "There is an existing file '~/.local/bin/claude' so Claude Code is probably already installed!"
+    echo "There is an existing file '~/.local/bin/claude' so Claude Code is probably already installed!" >&2
     exit 1
 fi
 
 if command -v claude > /dev/null 2>&1; then
-    echo "There is an existing command 'claude' so Claude Code is probably already installed!"
+    echo "There is an existing command 'claude' so Claude Code is probably already installed!" >&2
     exit 1
 fi
 
-echo "Updating package database, upgrading existing packages, and installing new packages..."
+echo "Making sure optional dependencies socat and bubblewrap are installed..."
+#echo "Updating package database, upgrading existing packages, and installing new packages..."
 if ! sudo pacman --sync --refresh --sysupgrade --needed "$@" socat bubblewrap; then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi
 
 echo
 echo "Cleaning package cache..."
 if ! sudo pacman --sync --clean "$@"; then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi
 
-# Using the official install script.
-# It is simply a small utility script that downloads an installer executable
+# Install Claude Code using it's built in installer, user-specific into home.
+# Alternative 1: Using the official install script.
+# It is simply a small utility script that downloads the application executable
 # as a temporary file, verifies published checksums, executes it with argument
-# "install", and then deletes it again. So we could have skipped the
-# intermediate script and done those steps directly as well.
+# "install", and then deletes it again. The script is very small, and handles
+# different Linux-based platforms and distros, so we could have skipped the
+# intermediate script and done the specific steps necessary for Arch Linux
+# directly as well - which is implemented in alternative 2 below!
+#echo
+#echo "Downloading and running Claude Code installer..."
+#if ! (set -o pipefail; curl --fail --silent --show-error --location https://claude.ai/install.sh | bash); then
+#    echo "Failed!" >&2
+#    exit 1
+#fi
+# Alternative 2:
+# Doing the same as the official install script, but specifically the linux-x64
+# binary, and doing some other assumptions since we know we are on Arch Linux:
+# - Using curl, which is safe to assume is available even in a clean install.
+# - Fetches the specific version number for the latest version.
+# - Downloads the version manifest and extracts the size and checksum for the
+#   application executable.
+# - Downloads the application executable as a temporary file, and verifies size
+#   and checksum.
+# - Runs the downloaded application executable with argument "install", to
+#   run the built-in installation procedure. This installs the executable
+#   into ~/.local/share/claude, with symlink from ~/.local/bin, and creates
+#   some directory structure in home (~/.claude.json, ~/.claude/, ~/.cache/, ~/.local/ etc).
+#   Without arguments, this installs the latest version, could alternatively
+#   specify "latest", "stable" or a specific version. Note that this actually
+#   downloads the application executable it installs, and when this is the
+#   latest version it is exactly the same as the one we have already downloaded
+#   and are running the install with! That is 200 MiB wasted download!
 echo
-echo "Downloading and running Claude Code installer..."
-if command -v curl > /dev/null 2>&1; then
-    if ! (set -o pipefail; curl --fail --silent --show-error --location https://claude.ai/install.sh | bash); then
-        echo "Failed!"
-        exit 1
-    fi
-elif command -v wget > /dev/null 2>&1; then
-    if ! (set -o pipefail; wget --output-document=- https://claude.ai/install.sh | bash); then
-        echo "Failed!"
-        exit 1
-    fi
-else
-    echo "Requires either curl or wget installed" >&2
+echo "Installing Claude Code application..."
+base_url=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases
+version=$(curl --fail --silent --show-error --location "${base_url}/latest")
+if [ -z "$version" ]; then
+    echo "Failed to fetch version" >&2
     exit 1
 fi
+echo "Found latest version ${version}"
+manifest=$(curl --fail --silent --show-error --location "${base_url}/${version}/manifest.json" | tr -d '\n\r\t' | sed 's/ \+/ /g')
+if [ -z "$manifest" ]; then
+    echo "Failed to fetch version manifest" >&2
+    exit 1
+fi
+manifest_version=$(echo "$manifest" | sed 's/.*"version": "\([^"]*\)".*/\1/')
+if [ "$version" != "$manifest_version" ]; then
+    echo "Version mismatch, expected ${version} but was ${manifest_version}" >&2
+    exit 1
+fi
+manifest_date=$(echo "$manifest" | sed 's/.*"buildDate": "\([^"]*\)".*/\1/')
+if [ -n "$manifest_date" ]; then
+    echo "Published $(date --date="${manifest_date}" 2> /dev/null) (${manifest_date})"
+else
+    echo "Unable to find published date"
+fi
+expected_size=$(echo "$manifest" | sed 's/.*"linux-x64": {[^}]*"size": \([0-9]*\).*/\1/')
+if [ -z "$expected_size" ]; then
+    echo "Failed to fetch expected size from version manifest" >&2
+    exit 1
+fi
+expected_checksum=$(echo "$manifest" | sed 's/.*"linux-x64": {[^}]*"checksum": "\([^"]*\)".*/\1/')
+if [ -z "$expected_checksum" ]; then
+    echo "Failed to fetch expected checksum from version manifest" >&2
+    exit 1
+fi
+echo "Downloading installer..."
+if ! curl --fail --silent --show-error --location "${base_url}/${version}/linux-x64/claude" --output "/tmp/claude-installer-${version}"; then # Official install.sh script downloads to "$HOME/.claude/downloads/claude-$version-$platform"
+    echo "Failed to download installer"
+    exit 1
+fi
+echo "Verifying download..."
+actual_size=$(stat -c %s "/tmp/claude-installer-${version}")
+if [ "$actual_size" != "$expected_size" ]; then
+    echo "Size mismatch, expected ${expected_size} but was ${actual_size}" >&2
+    rm --force "/tmp/claude-installer-${version}"
+    exit 1
+fi
+actual_checksum=$(sha256sum "/tmp/claude-installer-${version}" | cut -d' ' -f1)
+if [ "$actual_checksum" != "$expected_checksum" ]; then
+    echo "Checksum mismatch, expected ${expected_checksum} but was ${actual_checksum}" >&2
+    rm --force "/tmp/claude-installer-${version}"
+    exit 1
+fi
+chmod +x "/tmp/claude-installer-${version}"
+echo "Running installer..."
+if ! "/tmp/claude-installer-${version}" install; then
+    echo "Installer failed" >&2
+    rm --force "/tmp/claude-installer-${version}"
+    exit 1
+fi
+rm --force "/tmp/claude-installer-${version}"
 
 # Write relevant settings to ~/.claude/settings.json:
 # - Enable sandbox, but with regular permissions mode (auto-allow is default).
 # - Disable all MCP servers.
-# - Enable more privacy, minimize interference and unnecessary network traffic:
+# - Enable more privacy, minimize interference and unnecessary network traffic.
 #   - Disable telemetry, error reporting and feedback prompts with environment
 #     variables:
 #     - DISABLE_TELEMETRY=1
@@ -98,9 +177,9 @@ fi
 #       - Disable the "How is Claude doing?" session quality surveys.
 #       - This is already implicitly disabled due to DISABLE_TELEMETRY=1, but we
 #         set it anyway for completeness, and just in case.
-#   - Disable auto-updater (this is a bigger question than the above, but for a
+#   - Disable auto-updater. This is a bigger decision than the above, but for a
 #     consistent environment and minimal network traffic it may make sense to
-#     handle updates manually):
+#     handle updates manually.
 #     - DISABLE_AUTOUPDATER=1
 #       - This disables automatic updates. By default Claude checks for updates
 #         on startup and periodically while running, and it will download and
@@ -109,7 +188,7 @@ fi
 #       - One can still trigger updates manually from command line, with
 #         command "claude update".
 #   - Disable everything leading to unnecessary network traffic, which implicitly
-#     includes all of the above:
+#     includes all of the above.
 #     - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 #       - Equivalent of setting DISABLE_AUTOUPDATER, DISABLE_FEEDBACK_COMMAND,
 #         DISABLE_ERROR_REPORTING, and DISABLE_TELEMETRY. Also since
@@ -123,7 +202,7 @@ fi
 echo
 echo "Creating initial Claude Code configuration..."
 settings_file="${HOME}/.claude/settings.json"
-if [ ! -f "$settings_file" -o -r "$settings_file" ]; then
+if [ ! -f "$settings_file" ] || [ -r "$settings_file" ]; then
     current=$([ -s "$settings_file" ] && cat "$settings_file")
     if [ -z "$current" ] || [ "$current" = "{}" ]; then
         mkdir -p "$(dirname "$settings_file")"
@@ -158,36 +237,25 @@ fi
 # If it is not in PATH, the claude installer will have already warned about this:
 #   Native installation exists but ~/.local/bin is not in your PATH. Run:
 #   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
-echo "Ensuring the user-specific installed Claude Code executables are in PATH..."
-if echo "$PATH" | grep --quiet --extended-regexp "(^|:)${HOME}/\.local/bin(:|$)"; then
-    echo 'The current PATH variable already contains the ~/.local/bin directory of current user'
-    if command -v claude > /dev/null 2>&1; then
-        echo "The command 'claude' is available in current shell, trying to verify it by executing 'claude --version'..."
-        if claude --version; then
-            echo "Everything seems ok, but please verify the version output"
-        else
-            echo 'WARNING: Verification of claude command failed'
-        fi
-    else
-        echo "WARNING: The command 'claude' is not available, please inspect your PATH variable and user profile"
-    fi
+echo "Ensuring the user-specific installed Claude Code executable is in PATH..."
+if [ ! -f "${HOME}/.bashrc" ]; then
+    echo "WARNING: The user profile '~/.bashrc' does not exist so unable to add '~/.local/bin' to PATH automatically"
+elif grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
+    echo "The user profile '~/.bashrc' already adds '~/.local/bin' to PATH"
 else
-    echo 'The current PATH variable does not seem to contain the ~/.local/bin directory of current user'
-    if command -v claude > /dev/null 2>&1; then
-        echo "WARNING: The command 'claude' is available, however, please verify that this is the correct one"
-    else
-        echo "The command 'claude' is not available in current shell either"
-        if [ -f "${HOME}/.bashrc" ]; then
-            if grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
-                echo "The '~/.bashrc' file seem to already add '~/.local/bin' to PATH"
-                echo "Note that the changes will not have effect until you restart the shell"
-            else
-                echo "Updating '~/.bashrc' file to make it add '~/.local/bin' to PATH"
-                echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${HOME}/.bashrc"
-                echo "Note that the changes will not have effect until you restart the shell"
-            fi
-        else
-            echo "WARNING: The configuration file .bashrc does not exist and will not create it so PATH variable will not be updated"
-        fi
-    fi
+    echo "Adding '~/.local/bin' to PATH in user profile '~/.bashrc'"
+    echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${HOME}/.bashrc"
+    echo "NOTE: This takes effect in new shell sessions only"
+fi
+if echo "$PATH" | grep --quiet --extended-regexp "(^|:)${HOME}/\.local/bin(:|$)"; then
+    echo "The current PATH variable already contains the '~/.local/bin' directory of current user"
+else
+    echo "The current PATH variable does not contain the '~/.local/bin' directory of current user"
+fi
+if command -v claude > /dev/null 2>&1; then
+    echo "The command 'claude' is available in current shell, verifying by executing 'claude --version'..."
+    echo -n "Claude command version output: "
+    claude --version || echo "WARNING: 'claude --version' failed"
+else
+    echo "NOTE: The command 'claude' command is not available in this shell session"
 fi

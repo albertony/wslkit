@@ -34,7 +34,7 @@ if ! sudo pacman --sync --refresh --sysupgrade --needed "$@" \
     `# Go compiler` \
     go
 then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi
 
@@ -67,6 +67,6 @@ fi
 echo
 echo "Cleaning package cache..."
 if ! sudo pacman --sync --clean "$@"; then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi

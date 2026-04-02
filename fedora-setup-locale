@@ -41,7 +41,7 @@
 
 # Verify running as root
 if [ ${EUID:-$(id -u)} -ne 0 ]; then
-    echo 'Please run this script as root'
+    echo 'Please run this script as root' >&2
     exit 1
 fi
 
@@ -51,7 +51,7 @@ if hash dnf > /dev/null 2>&1; then
 elif hash microdnf > /dev/null 2>&1; then
     dnf=microdnf
 else
-    echo 'Package manager dnf or microdnf not found'
+    echo 'Package manager dnf or microdnf not found' >&2
     exit 1
 fi
 
@@ -68,7 +68,7 @@ echo "Removing language support packages..."
 packages=$(rpm --query --all --queryformat '%{NAME} ' 'langpacks-*' '*fonts*')
 if [ -n "$packages" ]; then
     if ! $dnf remove $packages; then
-        echo "Failed!"
+        echo "Failed!" >&2
         exit 1
     fi
 fi
@@ -79,6 +79,6 @@ echo "Installing english locale package..."
 # configured as default with "tsflags=nodocs" in /etc/dns/dns.conf, but this is
 # not supported by microdnf so for the minimal base image it must be added on command line.
 if ! $dnf --nodocs install glibc-langpack-en; then
-    echo "Failed!"
+    echo "Failed!" >&2
     exit 1
 fi

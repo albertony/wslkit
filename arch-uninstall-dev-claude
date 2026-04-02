@@ -15,6 +15,10 @@
 # the install, so should be safe and get us most cleanly back to original state
 # if we delete them.
 #
+# Passes any script arguments to the pacman commands, so can execute script with
+# --noconfirm for instance to run non-interactively proceeding without prompting
+# user.
+#
 # Any project directories you have worked with from Claude Code may have gotten
 # their own .claude subdirectory with project-specific configuration files.
 # These are of course not cleaned up by this script.
@@ -22,7 +26,7 @@
 
 # Verify not running as root, since this uninstalls Claude Code for the current user.
 if [ ${EUID:-$(id -u)} -eq 0 ]; then
-    echo 'Please do not run this script as root'
+    echo 'Please do not run this script as root' >&2
     exit 1
 fi
 
@@ -55,7 +59,7 @@ find "${HOME}/.cache" -type d -empty -delete 2> /dev/null
 #rmdir "${HOME}/.cache" 2> /dev/null
 
 echo "Cleaning up PATH variable..."
-if [ ! -d "${HOME}/.local/bin" -a -f "${HOME}/.bashrc" ]; then
+if [ ! -d "${HOME}/.local/bin" ] && [ -f "${HOME}/.bashrc" ]; then
     if grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
         sed --in-place '/^export PATH="\${HOME}\/\.local\/bin:\${PATH}"$/d' "${HOME}/.bashrc"
         echo "Removed from '~/.bashrc' the entry that added the now-removed '~/.local/bin' to PATH"
@@ -90,4 +94,19 @@ fi
 echo "Removing packages..."
 if ! sudo pacman --remove --nosave --recursive "$@" socat bubblewrap; then
     echo "WARNING: Could not remove socat/bubblewrap — they may already be uninstalled or required by another package"
+fi
+
+#
+# Clean the package database (cache).
+# Removing packages that are no longer installed to free up disk space,
+# assuming we removed either socat or bubblewrap or both above, these can be
+# removed from cache at least.
+# This will interactively prompt for confirmation before proceeding, unless
+# --noconfirm is also added.
+#
+echo
+echo "Cleanup package cache..."
+if ! sudo pacman --sync --clean "$@"; then
+    echo "Failed!" >&2
+    exit 1
 fi
