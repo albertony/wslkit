@@ -57,14 +57,14 @@ NoExtract = usr/share/licenses/*
 EOF
 fi
 
-# Make sure file /etc/pacman.d/noextract is included in /etc/pacman.conf
+# Make sure file /etc/pacman.d/noextract is included in /etc/pacman.conf.
 noextract_import_missing=1
 if command -v grep > /dev/null; then
-    # Grep is available, we can use it with a regular expression to be leanient on space characters etc
+    # Grep is available, we can use it with a regular expression to be leanient on space characters etc.
     grep --quiet '^\s*Include\s*=\s*/etc/pacman.d/noextract\s*$' /etc/pacman.conf
     noextract_import_missing=$?
 else
-    # Grep is not available, we search file for exact match of line
+    # Grep is not available, we search file for exact match of line.
     while read -r line; do
         if [ "$line" = "Include = /etc/pacman.d/noextract" ]; then
             noextract_import_missing=0

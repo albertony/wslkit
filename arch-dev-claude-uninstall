@@ -15,13 +15,18 @@
 # the install, so should be safe and get us most cleanly back to original state
 # if we delete them.
 #
+# Any project directories you have worked with from Claude Code may have gotten
+# their own .claude subdirectory with project-specific configuration files.
+# These are of course not cleaned up by this script. There is one exception:
+# If the home directory has been opened in Claude Code, then we may have gotten
+# an additional configuration file ~/.claude/settings.local.json for local
+# project settings of the home directory, in addition to the existing
+# ~/.claude/settings.json for user settings which overlaps with the shared
+# project settings for the home directory. We will delete both of these.
+#
 # Passes any script arguments to the pacman commands, so can execute script with
 # --noconfirm for instance to run non-interactively proceeding without prompting
 # user.
-#
-# Any project directories you have worked with from Claude Code may have gotten
-# their own .claude subdirectory with project-specific configuration files.
-# These are of course not cleaned up by this script.
 #
 
 # Verify not running as root, since this uninstalls Claude Code for the current user.
@@ -66,8 +71,8 @@ if [ ! -d "${HOME}/.local/bin" ] && [ -f "${HOME}/.bashrc" ]; then
     fi
 fi
 
-# Claude Code installer also creates a file ~/.config/git/ignore (if not exists),
-# and adds a line '**/.claude/settings.local.json'.
+# Claude may also create or update the global gitignore for the user, to ignore
+# local/personal project settings files, matching '**/.claude/settings.local.json'.
 echo "Cleaning up global git ignore..."
 if [ -f "${HOME}/.config/git/ignore" ]; then
     if grep --quiet '^\*\*/\.claude/settings\.local\.json$' "${HOME}/.config/git/ignore"; then

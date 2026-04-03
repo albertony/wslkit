@@ -70,5 +70,4 @@ if [ "$agent_run_state" -lt 2 ]; then
     done
 fi
 
-unset identity_file
-unset agent_run_state
+unset identity_file agent_run_state

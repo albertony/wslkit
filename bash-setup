@@ -18,13 +18,24 @@ if [ ${EUID:-$(id -u)} -ne 0 ]; then
     echo 'Please run this script as root' >&2
     exit 1
 fi
-# Does not work when just running with sudo from normal user, since the environment
-# variables are then stripped to a minimimum and specifically the WSL_DISTRO_NAME
-# will not be available!
-if [ -n "$SUDO_USER" ]; then
-    echo 'Please run this script as actual root, not sudo!' >&2
+
+# Verify not running with sudo.
+# This would not work, since the environment variables are then stripped to a
+# minimimum and specifically the WSL_DISTRO_NAME will not be available.
+if [ -n "$SUDO_UID" ]; then
+    echo 'Please run this script as actual root and not just sudo' >&2
     exit 1
 fi
+
+if ! command -v bash > /dev/null 2>&1; then
+    if [ "$1" != '--force' ] && [ "$1" != '-f' ]; then
+        echo "Bash is not installed" >&2
+        echo "To proceed anyway run with argument -f or --force" >&2
+        exit 1
+    fi
+    echo "WARNING: Bash is not installed but proceeding anyway due to argument $1"
+fi
+
 
 # Make sure there is a .bashrc in every existing home directory with some
 # proper configuration, as well as a .bash_profile to load it for interactive
@@ -47,15 +58,17 @@ fi
 
 (find /home -mindepth 1 -maxdepth 1 -type d -print0 && printf '%s\0' /root) | while read -d $'\0' dir; do
     user=$(basename "$dir")
-    echo "Checking user profile $user"
+    echo "Checking user profile ${user}..."
+
+    echo "Checking .bash_profile..."
     if [ ! -f "$dir/.bash_profile" ]; then
-        echo "No existing .bash_profile"
+        echo "No existing file"
         if [ -f "/etc/skel/.bash_profile" ]; then
             echo "Copying from skeleton file"
             cp "/etc/skel/.bash_profile" "$dir"
         else
             echo "Creating with hard coded default content"
-            # Taken from /etc/skel/.bash_profile in Arch Linux
+            # Creating with exact content from /etc/skel/.bash_profile in Arch.
             cat > "$dir/.bash_profile" << 'EOF'
 #
 # ~/.bash_profile
@@ -68,17 +81,21 @@ EOF
         # does not work with BusyBox chown.
         chown "${user}:${user}" "$dir/.bash_profile"
     else
-        echo "Keeping existing .bash_profile"
+        echo "Found existing file"
+        echo "Skipping: Not checking this just assuming it is correct"
     fi
 
+    echo "Checking .bashrc..."
     if [ ! -f "$dir/.bashrc" ]; then
-        echo "No existing .bashrc"
+        echo "No existing file"
         if [ -f "/etc/skel/.bashrc" ]; then
             echo "Copying from skeleton file"
             cp /etc/skel/.bashrc "$dir"
         else
             echo "Creating with hard coded default content"
-            # Taken from /etc/skel/.bashrc in Arch Linux
+            # Creating with exact content from /etc/skel/.bash_profile in Arch.
+            # We could have merged in all changes below to get the complete
+            # file immediately, but we do it to easier keep track of the origin.
             cat > "$dir/.bashrc" << 'EOF'
 #
 # ~/.bashrc
@@ -95,12 +112,14 @@ EOF
         # Note: Same as for .bash_profile above!
         chown "${user}:${user}" "$dir/.bashrc"
     else
-        echo "Updating existing .bashrc"
+        echo "Found existing file"
     fi
 
     file="$dir/.bashrc"
 
     # Configure shell prompt for WSL
+    # Commenting out any existing assignment of PS1 variable in .bashrc, and
+    # adds a new where the WSL distro name is included in the prompt.
     if [ -z "$WSL_DISTRO_NAME" ]; then
         echo "Skipping shell prompt for WSL: Not in a WSL environment"
     else
@@ -126,22 +145,47 @@ EOF
             # string, with 'grep --quiet --line-regexp --fixed-strings "$prompt"',
             # but that is not valid in BusyBox grep.
             prompt="PS1='\\[\\e]0;\\u@\${WSL_DISTRO_NAME}:\\w\\a\\]\\[\\e[01;36m\\]\\u\\[\\e[01;30m\\]@\\[\\e[01;32m\\]\${WSL_DISTRO_NAME} \\[\\e[01;34m\\]\\W \\[\\e[01;31m\\]\\$\\[\\e[00m\\] '"
-            # Regular regex to match existing, works with 'grep -q "$prompt"',
-            # also supported with BusyBox grep.
-            prompt_regex="^PS1='\\[\\\\e\]0;\\\\u@\${WSL_DISTRO_NAME}:\\\\w\\\\a\\]\\[\\\\e\[01;36m\\]\\\\u\\[\\\\e\[01;30m\\]@\\[\\\\e\[01;32m\\]\${WSL_DISTRO_NAME} \\[\\\\e\[01;34m\\]\\\\W \\[\\\\e\[01;31m\\]\\\\\$\\[\\\\e\[00m\\] '$"
+            # Regex to match any existing, in basic (BRE) syntax, which works
+            # with 'grep -q "$prompt"', and therefore also supported with
+            # BusyBox grep. The combination of regex escaping necessary with
+            # this syntax, and shell double-quote escaping on top of a string
+            # that already contains many special characters makes it very
+            # complex:
+            # 1: Sequences like \e, \u, \w, \a are not valid escape sequences.
+            # grep's behavior is undefined — some versions treat \e as literal
+            # e (ignoring the backslash), others warn and ignore it. So you
+            # cannot use \\ in a double-quoted string to match a literal \ when
+            # followed by these letters, because the shell reduces \\ to \, and
+            # grep then warns about and ignores the \ in \e, matching only e.
+            # The solution is to use a character class [\\] in the double-
+            # quoted string, which the shell reduces to [\], and inside a
+            # character class \ is just a literal character with no special
+            # meaning, so it reliably matches a literal \.
+            # 2: Every [ in the pattern — whether it's meant to start a
+            # character class or match a literal bracket — is interpreted as
+            # opening a character class. So [01;36m] is not "literal [01;36m]",
+            # it's a character class containing 0, 1, ;, 3, 6, m followed by a
+            # literal ]. The solution is to write every literal [ as [\[] — a
+            # character class containing only [, which matches a literal [.
+            # Also $ has the same problem — it's an end-of-line anchor outside
+            # a character class, so literal \$ in the file needs [\\][$] in the
+            # double-quoted string ([\\] becomes [\] matching \, and [$] matches
+            # literal $).
+            prompt_regex="^PS1='[\\][\\[][\\]e]0;[\\]u@\${WSL_DISTRO_NAME}:[\\]w[\\]a[\\]][\\][\\[][\\]e[\\[]01;36m[\\]][\\]u[\\][\\[][\\]e[\\[]01;30m[\\]]@[\\][\\[][\\]e[\\[]01;32m[\\]]\${WSL_DISTRO_NAME} [\\][\\[][\\]e[\\[]01;34m[\\]][\\]W [\\][\\[][\\]e[\\[]01;31m[\\]][\\][$][\\][\\[][\\]e[\\[]00m[\\]] '\$"
+            #echo "$prompt" | grep "$prompt_regex"
+            #printf '%s\n' $prompt_regex
         else
             prompt="PS1='\\[\\e]0;\\u@\${WSL_DISTRO_NAME}:\\w\\a\\]\\[\\e[01;36m\\]\\u\\[\\e[01;30m\\]@\\[\\e[01;32m\\]\${WSL_DISTRO_NAME} \\[\\e[01;34m\\]\\W \\[\\e[01;33m\\]\\$\\[\\e[00m\\] '"
-            prompt_regex="^PS1='\\[\\\\e\]0;\\\\u@\${WSL_DISTRO_NAME}:\\\\w\\\\a\\]\\[\\\\e\[01;36m\\]\\\\u\\[\\\\e\[01;30m\\]@\\[\\\\e\[01;32m\\]\${WSL_DISTRO_NAME} \\[\\\\e\[01;34m\\]\\\\W \\[\\\\e\[01;33m\\]\\\\\$\\[\\\\e\[00m\\] '$"
+            prompt_regex="^PS1='[\\][\\[][\\]e]0;[\\]u@\${WSL_DISTRO_NAME}:[\\]w[\\]a[\\]][\\][\\[][\\]e[\\[]01;36m[\\]][\\]u[\\][\\[][\\]e[\\[]01;30m[\\]]@[\\][\\[][\\]e[\\[]01;32m[\\]]\${WSL_DISTRO_NAME} [\\][\\[][\\]e[\\[]01;34m[\\]][\\]W [\\][\\[][\\]e[\\[]01;33m[\\]][\\][$][\\][\\[][\\]e[\\[]00m[\\]] '\$"
         fi
         if grep -q "$prompt_regex" "$file"; then
-            echo "Skipping shell prompt for WSL update: Already configured"
+            echo "Skipping shell prompt for WSL: Already configured"
         else
             echo "Updating shell prompt for WSL"
             sed -i -r 's/^(\s*PS1=.*)$/#\1/' "$file"
             echo "$prompt" >> "$file"
         fi
-        unset prompt
-        unset prompt_regex
+        unset prompt prompt_regex
     fi
     unset user
 
@@ -193,5 +237,6 @@ EOF
         echo "Adding grep auto color alias"
         echo "alias grep='grep --color=auto'" >> "$file"
     fi
+    unset file
 done
 unset dir

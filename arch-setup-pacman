@@ -68,42 +68,81 @@ if [ ${EUID:-$(id -u)} -ne 0 ]; then
     exit 1
 fi
 
-# Configure package repository mirror
+# Configure package repository mirror.
+# If there is an existing mirrorlist file, we check if the requested package
+# repository mirror is the first, or primary, of all active/uncommented
+# mirror configuration lines (pacman tries mirrors in the order they appear in
+# the mirrorlist file). If not, then we rename this mirrorlist file to .old
+# followed by some random numbers, and create a new. Pacman will typically also
+# create file mirrorlist.pacnew on update, so this strategy is sort of in line
+# with that.
 # Note: Doing this first, before the "pacman-key --init" command, because it
 # uses this, and if the file does not exist it will report an error (but continue):
 #   error: config file /etc/pacman.d/mirrorlist could not be read: No such file or directory
-echo "Configuring package repository mirror ${ARCH_SETUP_MIRROR:-https://fastly.mirror.pkgbuild.com}"
-if [ "$(tail --lines=1 /etc/pacman.d/mirrorlist 2> /dev/null)" = "Server = ${ARCH_SETUP_MIRROR:-https://fastly.mirror.pkgbuild.com}/\$repo/os/\$arch" ]; then
-    echo "This is already in the mirrorlist file"
-else
-    if [ -e "/etc/pacman.d/mirrorlist" ]; then
+mirrorhost=${ARCH_SETUP_MIRROR:-https://fastly.mirror.pkgbuild.com}
+mirrorconfig="Server = ${mirrorhost}/\$repo/os/\$arch"
+echo "Configuring package repository mirror ${mirrorhost}"
+if [ -f "/etc/pacman.d/mirrorlist" ]; then
+    mirrorlist=$(grep '^Server = ' /etc/pacman.d/mirrorlist)
+    if [ -z "$mirrorlist" ]; then
+        mirrorcount=0
+    else
+        mirrorcount=$(echo "$mirrorlist" | wc -l)
+    fi
+    echo "Mirrorlist file exists with ${mirrorcount} active mirror(s) configured"
+    if [ -n "$mirrorlist" ]; then
+        echo "$mirrorlist"
+    fi
+    if [ "$(echo "$mirrorlist" | head -1)" = "$mirrorconfig" ]; then
+        echo "The requested mirror is already configured as primary"
+        echo "Keeping existing mirrorlist file unchanged"
+        if [ "$mirrorcount" -gt 1 ]; then
+            echo "WARNING: There are additional lower priority mirrors configured (${mirrorcount} in total)"
+        fi
+    else
+        echo "The requested mirror is not already configured as primary"
         mirrorlist_backup=$(mktemp --tmpdir=/etc/pacman.d mirrorlist.old.XXXXX)
-        echo "Moving existing mirrorlist file out of the way: $mirrorlist_backup"
-        mv /etc/pacman.d/mirrorlist "$mirrorlist_backup"
+        echo "Moving existing mirrorlist file out of the way as '$mirrorlist_backup'"
+        if ! mv /etc/pacman.d/mirrorlist "$mirrorlist_backup"; then
+            echo "Failed!" >&2
+            exit 1
+        fi
+        echo "Writing new mirrorlist file with only the requested mirror"
+        if ! echo "$mirrorconfig" > /etc/pacman.d/mirrorlist; then
+            echo "Failed!" >&2
+            echo "Trying to restore backup" >&2
+            if ! mv "$mirrorlist_backup" /etc/pacman.d/mirrorlist; then
+                echo "Failed!" >&2
+                echo "Please check '/etc/pacman.d/mirrorlist' and compare with original backup '${mirrorlist_backup}'" >&2
+            fi
+            exit 1
+        fi
         unset mirrorlist_backup
     fi
+    unset mirrorcount mirrorlist
+else
     echo "Writing new mirrorlist file"
-    echo "Server = ${ARCH_SETUP_MIRROR:-https://fastly.mirror.pkgbuild.com}/\$repo/os/\$arch" > /etc/pacman.d/mirrorlist
+    if ! echo "$mirrorconfig" > /etc/pacman.d/mirrorlist; then
+        echo "Failed!" >&2
+        exit 1
+    fi
 fi
+unset mirrorconfig mirrorhost
 
-# Make sure awk is linked
+# Make sure awk is linked.
 awk=/usr/bin/awk
 if [ -e "$awk" ]; then
     if [ -x "$awk" ]; then
         echo "Required awk command found at $awk";
     else
         # Strange - it exists but is not an executable file!?
-        echo
         echo "WARNING: Required awk command not found, 'pacman-key --init' will probably report an error. When this script is completed, you should consider resetting all the pacman keys as described here: https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys"
-        echo
     fi
 else
-    # Find any *awk* executable in /usr/bin
+    # Find any *awk* executable in /usr/bin.
     realawk=$(find /usr/bin -type f -executable -name "*awk*" -print -quit)
     if [ -z "$realawk" ]; then
-        echo
         echo "WARNING: Required awk command not found, 'pacman-key --init' will probably report an error. When this script is completed, you should consider resetting all the pacman keys as described here: https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys"
-        echo
     else
         # Found an alternative awk command, e.g. /usr/bin/gawk-5.1.0, make a copy of that as /usr/bin/awk.
         if [ -h "$awk" ]; then
@@ -119,7 +158,7 @@ else
 fi
 unset awk
 
-# Initialize pacman
+# Initialize pacman.
 if [ -e /etc/pacman.d/gnupg ]; then
     echo "NOTICE: Existing pacman keys will be reset" # In case we have tried before without luck!?
     rm -rf /etc/pacman.d/gnupg

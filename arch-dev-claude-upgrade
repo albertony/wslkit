@@ -80,15 +80,15 @@ else
 fi
 echo "Comparing version..."
 if [ "$latest_version" != "$existing_version" ]; then
-    echo "A new version ${latest_version} is available!"
+    echo "NOTICE: A new version ${latest_version} is available"
     if [ "$1" = '--dry-run' ] || [ "$1" = '-n' ]; then
         exit 2 # Note: Exit code 2 here to indicate not an error but an update was available!
     fi
     if [ "$1" != '--noconfirm' ]; then
-        read -p "Run 'claude update' to update existing version ${existing_version} now? [Y/n] " choice
+        read -p "Run 'claude update' to update from version ${existing_version} now? [Y/n] " choice
         case "$choice" in
         ""|y|Y );;
-        * ) echo "Aborted" >&2; exit 2;; # Note: Exit code 2 here to indicate not an error but an update was available!
+        * ) echo "Skipped" >&2; exit 2;; # Note: Exit code 2 here to indicate not an error but an update was available!
         esac
     fi
     echo "Running Claude Code update command..."

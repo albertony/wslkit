@@ -3,7 +3,10 @@
 # Update package database and upgrade packages to latest version.
 #
 # This is intended for regular updates, relying on cached package database
-# without forcing a refresh and upgrading but not downgrading packages.
+# without forcing a refresh and upgrading but not downgrading packages. The
+# main update is performed by a pacman command with the -Syu option, which
+# seems to be the recommended approach for normal upgrades on Arch Linux.
+#
 # For a more thorough and intrusive full upgrade, use arch-upgrade-full.
 # The only differences between these two are that it forces update of package
 # database using double --refresh options, and allow downgrading package using

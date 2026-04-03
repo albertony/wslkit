@@ -18,16 +18,21 @@
 # environment and minimal network traffic it may make sense to handle updates
 # manually.
 #
-# Also performs refresh of package database and upgrade of existing packages to ensure
-# we get latest versions. Runs with the -Syu option, which seems to be the recommended
-# approach for normal upgrades on arch, not -Syuu which may also downgrade packages. In
-# any case, remember to either do both --refresh (-y) and --sysupgrade (-u), or none of
-# them, at least never --refresh (-y) which will easily lead to a bad state of partial
-# upgrades!
+# If the system has not been recently upgraded, which is done automatically
+# during setup by the arch-setup (arch-setup-packages) script, to ensure you
+# install the latest versions of the packages you should run the arch-upgrade
+# script first.
 #
-# Passes any script arguments to the pacman commands, so can execute script with
-# --noconfirm for instance to run non-interactively proceeding without prompting
-# user.
+# This script does not refresh package database and upgrade existing packages.
+# If we were to do it, we would have to be careful not end up in a state of
+# partial upgrades (remember to either do both --refresh (-y) and
+# --sysupgrade (-u), or none of them, at least never just --refresh (-y)), and
+# then there is also the potential issue with signing keys. These are exactly
+# things that the arch-upgrade script is handling.
+#
+# Passes any script arguments to the pacman commands, so can execute script
+# with --noconfirm for instance to run non-interactively proceeding without
+# prompting user.
 #
 # NOTE: Assumes basic tools are already installed, including sudo.
 # Run script ./arch-setup first to ensure this!
@@ -53,20 +58,12 @@ if command -v claude > /dev/null 2>&1; then
 fi
 
 echo "Making sure optional dependencies socat and bubblewrap are installed..."
-#echo "Updating package database, upgrading existing packages, and installing new packages..."
-if ! sudo pacman --sync --refresh --sysupgrade --needed "$@" socat bubblewrap; then
+if ! sudo pacman --sync --needed "$@" socat bubblewrap; then
     echo "Failed!" >&2
     exit 1
 fi
 
-echo
-echo "Cleaning package cache..."
-if ! sudo pacman --sync --clean "$@"; then
-    echo "Failed!" >&2
-    exit 1
-fi
-
-# Install Claude Code using it's built in installer, user-specific into home.
+# Install Claude Code using its built in installer, user-specific into home.
 # Alternative 1: Using the official install script.
 # It is simply a small utility script that downloads the application executable
 # as a temporary file, verifies published checksums, executes it with argument
@@ -135,7 +132,7 @@ if [ -z "$expected_checksum" ]; then
 fi
 echo "Downloading installer..."
 if ! curl --fail --silent --show-error --location "${base_url}/${version}/linux-x64/claude" --output "/tmp/claude-installer-${version}"; then # Official install.sh script downloads to "$HOME/.claude/downloads/claude-$version-$platform"
-    echo "Failed to download installer"
+    echo "Failed to download installer" >&2
     exit 1
 fi
 echo "Verifying download..."
@@ -163,9 +160,12 @@ rm --force "/tmp/claude-installer-${version}"
 # Write relevant settings to ~/.claude/settings.json:
 # - Enable sandbox, but with regular permissions mode (auto-allow is default).
 # - Disable all MCP servers.
+# - Skip automatic addition of the official plugin marketplace on first run.
+#   - CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1
+#   - It can be done manually later, from the /plugin slash command, by adding
+#     "anthropics/claude-plugins-official" as a Marketplace.
 # - Enable more privacy, minimize interference and unnecessary network traffic.
-#   - Disable telemetry, error reporting and feedback prompts with environment
-#     variables:
+#   - Disable telemetry, error reporting and feedback prompts.
 #     - DISABLE_TELEMETRY=1
 #       - Opt out of Statsig telemetry.
 #       - This implicitly also sets CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1.
@@ -177,6 +177,8 @@ rm --force "/tmp/claude-installer-${version}"
 #       - Disable the "How is Claude doing?" session quality surveys.
 #       - This is already implicitly disabled due to DISABLE_TELEMETRY=1, but we
 #         set it anyway for completeness, and just in case.
+#   - Disable automatic terminal title updates based on conversation context.
+#     - CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
 #   - Disable auto-updater. This is a bigger decision than the above, but for a
 #     consistent environment and minimal network traffic it may make sense to
 #     handle updates manually.
@@ -202,7 +204,7 @@ rm --force "/tmp/claude-installer-${version}"
 echo
 echo "Creating initial Claude Code configuration..."
 settings_file="${HOME}/.claude/settings.json"
-if [ ! -f "$settings_file" ] || [ -r "$settings_file" ]; then
+if [ ! -f "$settings_file" ] || [ -w "$settings_file" ]; then
     current=$([ -s "$settings_file" ] && cat "$settings_file")
     if [ -z "$current" ] || [ "$current" = "{}" ]; then
         mkdir -p "$(dirname "$settings_file")"
@@ -220,7 +222,9 @@ if [ ! -f "$settings_file" ] || [ -r "$settings_file" ]; then
     "DISABLE_ERROR_REPORTING": "1",
     "DISABLE_AUTOUPDATER": "1",
     "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1",
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
   }
 }
 EOF
@@ -228,7 +232,7 @@ EOF
         echo "WARNING: Skipped because existing file '${settings_file}' is not empty"
     fi
 else
-    echo "WARNING: Skipped because existing file '${settings_file}' is not readable"
+    echo "WARNING: Skipped because existing file '${settings_file}' is not writable"
 fi
 
 # Ensure the Claude executable is in PATH.
@@ -254,8 +258,8 @@ else
 fi
 if command -v claude > /dev/null 2>&1; then
     echo "The command 'claude' is available in current shell, verifying by executing 'claude --version'..."
-    echo -n "Claude command version output: "
+    echo -n "Claude version output: "
     claude --version || echo "WARNING: 'claude --version' failed"
 else
-    echo "NOTE: The command 'claude' command is not available in this shell session"
+    echo "NOTE: The command 'claude' is not available in this shell session"
 fi
