@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# Migrate an existing Claude Code installation for current user from a regular
+# setup to a standalone setup.
+#
+# This can be when a standalone setup has accidentally been upgraded to a new
+# version by the built-in updater, i.e. the auto-updater or a manual
+# 'claude update' run, which would migrate it to a regular setup. This replace
+# the symbolic link ~/.local/bin/claude with the physical file it points to,
+# and removes all remaining application executables in the version store.
+#
+# Also removes any remaining empty directory or subdirectories of ~/.local,
+# assuming if it end up empty after the clean, it was Claude Code that created
+# it.
+#
+# Assuming default locations are used, i.e. well-known locations within the
+# current user's home directory, and that there is not set a custom location
+# environment variable CLAUDE_CONFIG_DIR.
+#
+
+if [ ${EUID:-$(id -u)} -eq 0 ]; then
+    echo 'Please do not run this script as root' >&2
+    exit 1
+fi
+if [ ! -L "${HOME}/.local/bin/claude" ]; then
+    echo "The path '~/.local/bin/claude' is not a symbolic link so this already looks like a standalone setup" >&2
+    exit 1
+fi
+mv "$(readlink -e "${HOME}/.local/bin/claude")" "${HOME}/.local/bin/claude" && rm --recursive --force "${HOME}/.local/share/claude/versions"
+find "${HOME}/.local/share/claude/versions" -maxdepth 1 -type f -not -path "$(readlink -e "${HOME}/.local/bin/claude")" -delete 2> /dev/null
+find "${HOME}/.local" -type d -empty -delete 2> /dev/null

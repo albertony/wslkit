@@ -1,0 +1,292 @@
+#!/bin/sh
+#
+# Installs development environment for Claude Code for current user.
+#
+# Note that the Claude Code application is installed locally and specifically
+# for current user only!
+#
+# Includes additional dependencies and configuration for running sandboxed
+# mode, and with curated initial configuration for privacy and minimized
+# unnecessary network traffic.
+#
+# This is a variant which creates a bit more standalone setup than the regular
+# setup created by for instance the official installation script
+# https://claude.ai/install.sh. Possible advantages are a more stable setup,
+# and more minimal disk usage and network traffic. It does not rely on the
+# official Claude Code bootstrapper command 'claude install', but instead
+# simply downloads the application executable directly as ~/.local/bin/claude.
+# The main difference is there will only ever be a single executable installed.
+# With a regular install there are multiple versions of the executable
+# installed into directory ~/.local/share/claude/versions, and
+# ~/.local/bin/claude is just a symlink to the current (latest) version. The
+# application executable is quite big, over 200 MiB. So the regular setup
+# wastes disk space. Also the install process wastes network traffic, because
+# the executable is actually downloaded twice (first time only to get a
+# temporary copy to run the install command with).
+#
+# Note that if the built-in update functionality is used, either the
+# auto-updater or the 'claude update' command, it will migrate to the regular
+# setup! So to keep this "standalone" setup, update must be done manually by
+# downloading and replacing the binary. The utility script
+# arch-dev-claude-standalone-upgrade will do that! To migrate back to
+# standalone setup the following command should work:
+#   mv "$(readlink ~/.local/bin/claude)" ~/.local/bin/claude && rm -rf ~/.local/share/claude/versions
+#
+# The official installation method is by running a bootstrapper script
+# https://claude.ai/install.sh. This is a small utility script that downloads
+# the application executable as a temporary file, verifies published checksums,
+# executes it with argument "install", and then deletes it again. The script is
+# very small, and handles different Linux-based platforms and distros, so as an
+# alternative one can easily skip the intermediate script and do the specific
+# steps necessary for Arch Linux distribution and x64 platform directly. The
+# main steps for performing a regular installation this way are:
+# - Fetch the specific version number for the latest version.
+# - Download the version manifest and extract checksum (and size) for the
+#   application executable.
+# - Download the application executable as a temporary file, and verify
+#   checksum (and size).
+# - Run the downloaded application executable with argument "install", to
+#   perform the built-in installation procedure. This installs the executable
+#   into ~/.local/share/claude/versions, creates symlink ~/.local/bin/claude,
+#   and creates  directory structure in home (~/.claude.json, ~/.claude/,
+#   ~/.cache/, ~/.local/ etc). Without arguments, this installs the latest
+#   version, but can also specify "latest", "stable" or a specific version.
+#   Note that this actually downloads the application executable it installs,
+#   and when this is the latest version it is exactly the same as the one we
+#   have already downloaded and are running the install with! That is 200 MiB
+#   wasted download!
+# Skipping the install procedure like we do here works just fine. In addition
+# to the lack of a versioned symbolic link described previously, it does not
+# create the initial home directory structure either, but this will be created
+# when the application is started for the first time anyway.
+#
+# This installs packages for the optional dependencies socat and bubblewrap,
+# required for the sandboxing mode. Then downloads the latest version of the
+# application executable into the user-specific local install location, making
+# it available as path ~/.local/bin/claude. Finally, this creates a curated
+# initial configuration in current user's ~/.claude/settings.json. First of all
+# this disables the built-in auto-updater, which is necessary to keep the
+# standalone setup! It also enables the sandbox mode with regular permissions
+# (not auto-allow) by default, disables all MCP servers so that user later must
+# explicitly allow any to be used, and disables automatic addition of the
+# official plugin marketplace on first run so that user can decide later if it
+# should be added manually. Also, it disables telemetry, error reporting,
+# feedback prompts and dynamic updating of terminal title based on conversation
+# context.
+#
+# If the system has not been recently upgraded, which is done automatically
+# during setup by the arch-setup (arch-setup-packages) script, to ensure you
+# install the latest versions of the packages you should run the arch-upgrade
+# script first.
+#
+# This script does not refresh package database and upgrade existing packages.
+# If we were to do it, we would have to be careful not end up in a state of
+# partial upgrades (remember to either do both --refresh (-y) and
+# --sysupgrade (-u), or none of them, at least never just --refresh (-y)), and
+# then there is also the potential issue with signing keys. These are exactly
+# things that the arch-upgrade script is handling.
+#
+# Passes any script arguments to the pacman commands, so can execute script
+# with --noconfirm for instance to run non-interactively proceeding without
+# prompting user.
+#
+# NOTE: Assumes basic tools are already installed, including sudo.
+# Run script ./arch-setup first to ensure this!
+#
+# SEE ALSO:
+#   https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/bootstrap.sh
+#
+
+# Verify not running as root, since this installs Claude Code for the current user.
+if [ ${EUID:-$(id -u)} -eq 0 ]; then
+    echo 'Please do not run this script as root' >&2
+    exit 1
+fi
+
+if [ -f "${HOME}/.local/bin/claude" ]; then
+    echo "There is an existing file '~/.local/bin/claude' so Claude Code is probably already installed!" >&2
+    exit 1
+fi
+
+if command -v claude > /dev/null 2>&1; then
+    echo "There is an existing command 'claude' so Claude Code is probably already installed!" >&2
+    exit 1
+fi
+
+echo "Making sure optional dependencies socat and bubblewrap are installed..."
+if ! sudo pacman --sync --needed "$@" socat bubblewrap; then
+    echo "Failed!" >&2
+    exit 1
+fi
+
+# Download latest version and install as user-specific application ~/.local/bin/claude.
+# For atomic binary replacement, downloads into temporary location, before moving into place.
+echo
+echo "Installing Claude Code application..."
+base_url=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases
+version=$(curl --fail --silent --show-error --location "${base_url}/latest")
+if [ -z "$version" ]; then
+    echo "Failed to fetch version" >&2
+    exit 1
+fi
+echo "Found latest version ${version}"
+manifest=$(curl --fail --silent --show-error --location "${base_url}/${version}/manifest.json" | tr -d '\n\r\t' | sed 's/ \+/ /g')
+if [ -z "$manifest" ]; then
+    echo "Failed to fetch version manifest" >&2
+    exit 1
+fi
+manifest_version=$(echo "$manifest" | sed 's/.*"version": "\([^"]*\)".*/\1/')
+if [ "$version" != "$manifest_version" ]; then
+    echo "Version mismatch, expected ${version} but was ${manifest_version}" >&2
+    exit 1
+fi
+manifest_date=$(echo "$manifest" | sed 's/.*"buildDate": "\([^"]*\)".*/\1/')
+if [ -n "$manifest_date" ]; then
+    echo "Published $(date --date="${manifest_date}" 2> /dev/null) (${manifest_date})"
+else
+    echo "Unable to find published date"
+fi
+expected_size=$(echo "$manifest" | sed 's/.*"linux-x64": {[^}]*"size": \([0-9]*\).*/\1/')
+if [ -z "$expected_size" ]; then
+    echo "Failed to fetch expected size from version manifest" >&2
+    exit 1
+fi
+expected_checksum=$(echo "$manifest" | sed 's/.*"linux-x64": {[^}]*"checksum": "\([^"]*\)".*/\1/')
+if [ -z "$expected_checksum" ]; then
+    echo "Failed to fetch expected checksum from version manifest" >&2
+    exit 1
+fi
+echo "Downloading..."
+if ! curl --fail --silent --show-error --location "${base_url}/${version}/linux-x64/claude" --output "/tmp/claude-installer-${version}"; then
+    echo "Failed!" >&2
+    exit 1
+fi
+echo "Verifying..."
+actual_size=$(stat -c %s "/tmp/claude-installer-${version}")
+if [ "$actual_size" != "$expected_size" ]; then
+    echo "Size mismatch, expected ${expected_size} but was ${actual_size}" >&2
+    rm --force "/tmp/claude-installer-${version}"
+    exit 1
+fi
+actual_checksum=$(sha256sum "/tmp/claude-installer-${version}" | cut -d' ' -f1)
+if [ "$actual_checksum" != "$expected_checksum" ]; then
+    echo "Checksum mismatch, expected ${expected_checksum} but was ${actual_checksum}" >&2
+    rm --force "/tmp/claude-installer-${version}"
+    exit 1
+fi
+echo "Installing..."
+if ! mkdir -p "${HOME}/.local/bin"; then
+    echo "Failed to create directory '~/.local/bin'" >&2
+    rm --force "/tmp/claude-installer-${version}"
+    exit 1
+fi
+if ! mv "/tmp/claude-installer-${version}" "${HOME}/.local/bin/claude"; then
+    echo "Failed to install new executable as '~/.local/bin/claude'" >&2
+    rm --force "/tmp/claude-installer-${version}"
+    exit 1
+fi
+chmod +x "${HOME}/.local/bin/claude"
+
+# Write relevant settings to ~/.claude/settings.json:
+# - Enable sandbox, but with regular permissions mode (auto-allow is default).
+# - Disable all MCP servers.
+# - Disable auto-updater. Important to avoid the standalone setup being
+#   migrated to a regular setup! The application must be updated by downloading
+#   the new version manually, cannot use the 'claude update' command either.
+#   By default Claude checks for updates on startup and periodically while
+#   running, and it will download and install in the background, and they take
+#   effect the next time Claude Code is started.
+#   - DISABLE_AUTOUPDATER=1
+# - Skip automatic addition of the official plugin marketplace on first run.
+#   - CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1
+#   - It can be done manually later, from the /plugin slash command, by adding
+#     "anthropics/claude-plugins-official" as a Marketplace.
+# - Enable more privacy, minimize interference and unnecessary network traffic.
+#   - Disable telemetry, error reporting and feedback prompts.
+#     - DISABLE_TELEMETRY=1
+#       - Opt out of Statsig telemetry.
+#       - This implicitly also sets CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1.
+#     - DISABLE_FEEDBACK_COMMAND=1
+#       - Disables the /feedback command.
+#     - DISABLE_ERROR_REPORTING=1
+#       - Opt out of Sentry error reporting.
+#     - CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY=1
+#       - Disable the "How is Claude doing?" session quality surveys.
+#       - This is already implicitly disabled due to DISABLE_TELEMETRY=1, but we
+#         set it anyway for completeness, and just in case.
+#   - Disable automatic terminal title updates based on conversation context.
+#     - CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1
+#   - Disable everything leading to unnecessary network traffic, which implicitly
+#     includes all of the above.
+#     - CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+#       - Equivalent of setting DISABLE_AUTOUPDATER, DISABLE_FEEDBACK_COMMAND,
+#         DISABLE_ERROR_REPORTING, and DISABLE_TELEMETRY. Also since
+#         CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY is implicit when DISABLE_TELEMETRY,
+#         setting CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC will in reality
+#         cover all of the environment variables above! We could therefore remove
+#         all others, but we set them anyway for completeness, and just in case.
+#         Also, should we later decide to keep the auto-updater enabled, we can
+#         no longer use CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, and would
+#         then have to reintroduce all others.
+echo
+echo "Creating initial Claude Code configuration..."
+settings_file="${HOME}/.claude/settings.json"
+if [ ! -f "$settings_file" ] || [ -w "$settings_file" ]; then
+    current=$([ -s "$settings_file" ] && cat "$settings_file")
+    if [ -z "$current" ] || [ "$current" = "{}" ]; then
+        mkdir -p "$(dirname "$settings_file")"
+        cat > "$settings_file" << 'EOF'
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": false
+  },
+  "allowedMcpServers": [],
+  "env": {
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_FEEDBACK_COMMAND": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_AUTOUPDATER": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1",
+    "CLAUDE_CODE_DISABLE_TERMINAL_TITLE": "1"
+  }
+}
+EOF
+    else
+        echo "WARNING: Skipped because existing file '${settings_file}' is not empty"
+    fi
+else
+    echo "WARNING: Skipped because existing file '${settings_file}' is not writable"
+fi
+
+# Ensure the Claude executable is in PATH.
+# It is installed into ~/.local/bin, which is a commonly used directory for
+# user-specific executables, but on Arch Linux it is not in PATH by default.
+# If it is not in PATH, the claude installer will have already warned about this:
+#   Native installation exists but ~/.local/bin is not in your PATH. Run:
+#   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
+echo "Ensuring the user-specific installed Claude Code executable is in PATH..."
+if [ ! -f "${HOME}/.bashrc" ]; then
+    echo "WARNING: The user profile '~/.bashrc' does not exist so unable to add '~/.local/bin' to PATH automatically"
+elif grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
+    echo "The user profile '~/.bashrc' already adds '~/.local/bin' to PATH"
+else
+    echo "Adding '~/.local/bin' to PATH in user profile '~/.bashrc'"
+    echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${HOME}/.bashrc"
+    echo "NOTE: This takes effect in new shell sessions only"
+fi
+if echo "$PATH" | grep --quiet --extended-regexp "(^|:)${HOME}/\.local/bin(:|$)"; then
+    echo "The current PATH variable already contains the '~/.local/bin' directory of current user"
+else
+    echo "The current PATH variable does not contain the '~/.local/bin' directory of current user"
+fi
+if command -v claude > /dev/null 2>&1; then
+    echo "The command 'claude' is available in current shell, verifying by executing 'claude --version'..."
+    echo -n "Claude version output: "
+    claude --version || echo "WARNING: 'claude --version' failed"
+else
+    echo "NOTE: The command 'claude' is not available in this shell session"
+fi

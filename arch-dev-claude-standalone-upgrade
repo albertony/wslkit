@@ -1,0 +1,144 @@
+#!/bin/sh
+#
+# Updates an existing Claude Code installation for current user.
+#
+# This is a variant assuming the more standalone setup than the regular
+# setup. When the official Claude Code install command was not used, the
+# application executable is directly installed as ~/.local/bin/claude,
+# and we update it by downloading and replacing it with the latest version.
+# In the regular setup this is simply a symlink to one of several versions
+# of the executable installed into directory ~/.local/share/claude. Note
+# that if the built-in update functionality is used, either the auto-updater
+# or the 'claude update' command, it will migrate to the regular setup!
+# So to keep this standalone setup, update must be done manually by downloading
+# and replacing the binary, like this script does! To migrate back from
+# regular setup to standalone setup the following command should work:
+#   mv "$(readlink ~/.local/bin/claude)" ~/.local/bin/claude && rm -rf ~/.local/share/claude/versions
+#
+# This script can be run with argument --dry-run or -n to only check versions,
+# but not update, and not prompt user to ask if an update should be preformed.
+# For completeness with other scripts this script can be executed with argument
+# --noconfirm to run non-interactively proceeding without prompting user. This
+# means if there is an update available, it will be installed.
+#
+# SEE ALSO:
+#   https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/bootstrap.sh
+#
+
+# Verify not running as root, since this installs Claude Code for the current user.
+if [ ${EUID:-$(id -u)} -eq 0 ]; then
+    echo 'Please do not run this script as root' >&2
+    exit 1
+fi
+
+echo "Finding existing version..."
+existing_path=$(command -v claude 2> /dev/null)
+if [ -z "$existing_path" ]; then
+    echo "The command 'claude' is not available in this shell session" >&2
+    exit 1
+fi
+if [ "$existing_path" != "${HOME}/.local/bin/claude" ]; then
+    echo "The command 'claude' is at path ${existing_path} instead of the expected '~/.local/bin/claude'" >&2
+    exit 1
+fi
+if [ -L "${HOME}/.local/bin/claude" ]; then
+    echo "The path '~/.local/bin/claude' is a symbolic link so this looks like a regular and not standalone setup" >&2
+    exit 1
+fi
+existing_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
+if [ -z "$existing_version" ]; then
+    echo "Failed to find existing version from output of command 'claude'" >&2
+    exit 1
+fi
+echo "Existing version is ${existing_version}"
+
+echo "Finding latest version..."
+base_url=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases
+latest_version=$(curl --fail --silent --show-error --location "${base_url}/latest")
+if [ -z "$latest_version" ]; then
+    echo "Failed to fetch latest version" >&2
+    exit 1
+fi
+echo "Latest version is ${latest_version}"
+manifest=$(curl --fail --silent --show-error --location "${base_url}/${latest_version}/manifest.json" | tr -d '\n\r\t' | sed 's/ \+/ /g')
+if [ -z "$manifest" ]; then
+    echo "Failed to fetch version manifest" >&2
+    exit 1
+fi
+manifest_version=$(echo "$manifest" | sed 's/.*"version": "\([^"]*\)".*/\1/')
+if [ "$latest_version" != "$manifest_version" ]; then
+    echo "Version mismatch, expected ${latest_version} but was ${manifest_version}" >&2
+    exit 1
+fi
+manifest_date=$(echo "$manifest" | sed 's/.*"buildDate": "\([^"]*\)".*/\1/')
+if [ -n "$manifest_date" ]; then
+    echo "Latest version was published $(date --date="${manifest_date}" 2> /dev/null) (${manifest_date})"
+else
+    echo "Unable to find published date"
+fi
+echo "Comparing version..."
+if [ "$latest_version" != "$existing_version" ]; then
+    echo "NOTICE: A new version ${latest_version} is available"
+    if [ "$1" = '--dry-run' ] || [ "$1" = '-n' ]; then
+        exit 2 # Note: Exit code 2 here to indicate not an error but an update was available!
+    fi
+    if [ "$1" != '--noconfirm' ]; then
+        read -p "Download version ${latest_version} and replace existing version ${existing_version} now? [Y/n] " choice
+        case "$choice" in
+        ""|y|Y );;
+        * ) echo "Skipped" >&2; exit 2;; # Note: Exit code 2 here to indicate not an error but an update was available!
+        esac
+    fi
+    expected_size=$(echo "$manifest" | sed 's/.*"linux-x64": {[^}]*"size": \([0-9]*\).*/\1/')
+    if [ -z "$expected_size" ]; then
+        echo "Failed to fetch expected size from version manifest" >&2
+        exit 1
+    fi
+    expected_checksum=$(echo "$manifest" | sed 's/.*"linux-x64": {[^}]*"checksum": "\([^"]*\)".*/\1/')
+    if [ -z "$expected_checksum" ]; then
+        echo "Failed to fetch expected checksum from version manifest" >&2
+        exit 1
+    fi
+    echo "Downloading..."
+    if ! curl --fail --silent --show-error --location "${base_url}/${latest_version}/linux-x64/claude" --output "/tmp/claude-installer-${latest_version}"; then
+        echo "Failed!" >&2
+        exit 1
+    fi
+    echo "Verifying..."
+    actual_size=$(stat -c %s "/tmp/claude-installer-${latest_version}")
+    if [ "$actual_size" != "$expected_size" ]; then
+        echo "Size mismatch, expected ${expected_size} but was ${actual_size}" >&2
+        rm --force "/tmp/claude-installer-${latest_version}"
+        exit 1
+    fi
+    actual_checksum=$(sha256sum "/tmp/claude-installer-${latest_version}" | cut -d' ' -f1)
+    if [ "$actual_checksum" != "$expected_checksum" ]; then
+        echo "Checksum mismatch, expected ${expected_checksum} but was ${actual_checksum}" >&2
+        rm --force "/tmp/claude-installer-${latest_version}"
+        exit 1
+    fi
+    echo "Installing..."
+    if ! mkdir -p "${HOME}/.local/bin"; then
+        echo "Failed to create directory '~/.local/bin'" >&2
+        rm --force "/tmp/claude-installer-${latest_version}"
+        exit 1
+    fi
+    if ! mv "/tmp/claude-installer-${latest_version}" "${HOME}/.local/bin/claude"; then
+        echo "Failed to install new executable as '~/.local/bin/claude'" >&2
+        rm --force "/tmp/claude-installer-${latest_version}"
+        exit 1
+    fi
+    chmod +x "${HOME}/.local/bin/claude"
+    new_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
+    if [ -z "$new_version" ]; then
+        echo "Failed to find new version from output of command 'claude'" >&2
+        exit 1
+    fi
+    if [ "$new_version" != "$latest_version" ]; then
+        echo "WARNING: The output of command 'claude' indicates this is version ${new_version} and not ${latest_version}"
+    else
+        echo "Version successfully updated now ${new_version}"
+    fi
+else
+    echo "Existing version ${existing_version} is up to date"
+fi

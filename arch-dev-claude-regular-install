@@ -1,22 +1,41 @@
 #!/bin/sh
 #
-# Installs development environment for Claude Code.
+# Installs development environment for Claude Code for current user.
+#
+# Note that the Claude Code application is installed locally and specifically
+# for current user only!
 #
 # Includes additional dependencies and configuration for running sandboxed
-# mode, and with some initial configuration for privacy and minimized
+# mode, and with curated initial configuration for privacy and minimized
 # unnecessary network traffic.
 #
+# This is a variant which creates a regular setup, corresponding to the setup
+# created by the official installation script https://claude.ai/install.sh
+# (but with some additional steps, described below). It relies on the Claude
+# Code bootstrapper command 'claude install', and its built-in updater, which
+# keeps multiple versions of the executable in directory
+# ~/.local/share/claude/versions and maintains ~/.local/bin/claude as a symlink
+# to the current (latest) version. The standard auto-updater or 'claude update'
+# command can be used to upgrade to newer versions.
+#
 # This installs packages for the optional dependencies socat and bubblewrap,
-# required for the sandboxing mode. Then runs the official Claude Code install
-# script, which performs a user-specific local install with the executable in
-# ~/.local/bin. Finally, creates initial configuration in current user's
-# ~/.claude/settings.json, to have enabled as default the sandbox mode with
-# regular permissions (not auto-allow), disable all MCP servers so that user
-# later must explicitly allow any to be used, and also to disable telemetry,
-# error reporting and feedback prompts. In addition it disables the built-in
-# auto-updater! This is a bigger decision than the above, but for a consistent
-# environment and minimal network traffic it may make sense to handle updates
-# manually.
+# required for the sandboxing mode. Then runs the 'claude install' command,
+# which performs a standard user-specific local install. The executable is
+# then available at path ~/.local/bin/claude, which is a symlink into a
+# specific version of the executables in directory
+# ~/.local/share/claude/versions, a strategy used by the Claude built-in
+# updater functionality. Finally, this script creates a curated initial
+# configuration in current user's ~/.claude/settings.json. This enables the
+# sandbox mode with regular permissions (not auto-allow) by default. It also
+# disables all MCP servers so that user later must explicitly allow any to be
+# used and disables automatic addition of the official plugin marketplace on
+# first run so that user can decide later if it should be added manually. Also
+# disables telemetry, error reporting, feedback prompts and dynamic updating of
+# terminal title based on conversation context. In addition it disables the
+# built-in auto-updater! This is a bigger decision than the above, but for a
+# consistent environment and minimal network traffic it may make sense to
+# handle updates manually. It can easily be done at any time with command
+# 'claude update', or with a separate script arch-dev-claude-regular-upgrade.
 #
 # If the system has not been recently upgraded, which is done automatically
 # during setup by the arch-setup (arch-setup-packages) script, to ensure you
@@ -80,21 +99,22 @@ fi
 # Alternative 2:
 # Doing the same as the official install script, but specifically the linux-x64
 # binary, and doing some other assumptions since we know we are on Arch Linux:
-# - Using curl, which is safe to assume is available even in a clean install.
-# - Fetches the specific version number for the latest version.
-# - Downloads the version manifest and extracts the size and checksum for the
+# - Use curl, which is safe to assume is available even in a clean install.
+# - Fetch the specific version number for the latest version.
+# - Download the version manifest and extract checksum (and size) for the
 #   application executable.
-# - Downloads the application executable as a temporary file, and verifies size
-#   and checksum.
-# - Runs the downloaded application executable with argument "install", to
-#   run the built-in installation procedure. This installs the executable
-#   into ~/.local/share/claude, with symlink from ~/.local/bin, and creates
-#   some directory structure in home (~/.claude.json, ~/.claude/, ~/.cache/, ~/.local/ etc).
-#   Without arguments, this installs the latest version, could alternatively
-#   specify "latest", "stable" or a specific version. Note that this actually
-#   downloads the application executable it installs, and when this is the
-#   latest version it is exactly the same as the one we have already downloaded
-#   and are running the install with! That is 200 MiB wasted download!
+# - Download the application executable as a temporary file, and verify
+#   checksum (and size).
+# - Run the downloaded application executable with argument "install", to
+#   perform the built-in installation procedure. This installs the executable
+#   into ~/.local/share/claude/versions, creates symlink ~/.local/bin/claude,
+#   and creates  directory structure in home (~/.claude.json, ~/.claude/,
+#   ~/.cache/, ~/.local/ etc). Without arguments, this installs the latest
+#   version, but can also specify "latest", "stable" or a specific version.
+#   Note that this actually downloads the application executable it installs,
+#   and when this is the latest version it is exactly the same as the one we
+#   have already downloaded and are running the install with! That is 200 MiB
+#   wasted download!
 echo
 echo "Installing Claude Code application..."
 base_url=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases

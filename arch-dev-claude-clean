@@ -1,0 +1,69 @@
+#!/bin/sh
+#
+# Cleans the development environment for Claude Code for current user.
+#
+# This removes global/user data files related to projects, sessions, prompt
+# history, file history, various state, cache etc, but keeps the important
+# configuration and authentication credentials.
+#
+# Claude Code persists a lot of session and history data, but cleans up most
+# of it automatically, by default after 30 days (e.g. sessions that have been
+# inative this long). The time is configurable with settings.json parameter
+# cleanupPeriodDays, and it is considered by session persistence and file
+# history. Despite what the documentation says, it seems one can set value 0 to
+# turn off the persistance. There are also be an undocumented environment
+# variable CLAUDE_CODE_SKIP_PROMPT_HISTORY that can be set turn off the prompt
+# history persitance, but also session persistance. Officially there is
+# command-line argument --no-session-persistence that claude can be started
+# with to disable session persistance for that instance. As of Claude Code
+# version 2.1.92, there are no built in method to get rid of these things on
+# demand, and it is not that clear what data is persisted when and for how
+# long. This script can be used for a thorough clean to be sure. For an even
+# more thorough clean, use the uninstall script and then the install script to
+# start completely from scratch.
+#
+# This also removes any old versions of the application executables from a
+# regular setup. At the end, any remaining empty directories from the user home
+# will also be removed, assuming if they end up empty after the clean, it was
+# Claude Code that created them. The directories considered are commonly used
+# Linux directories but does not exist by default in plain Arch Linux
+# filesystem, and Claude Code creates them during the regular install
+# procedure, or on first start, so should be safe and get us most cleanly back
+# to original state if we delete them.
+#
+# Assuming default locations are used, i.e. well-known locations within the
+# current user's home directory, and that there is not set a custom location
+# environment variable CLAUDE_CONFIG_DIR.
+#
+
+# Verify not running as root, since this uninstalls Claude Code for the current user.
+if [ ${EUID:-$(id -u)} -eq 0 ]; then
+    echo 'Please do not run this script as root' >&2
+    exit 1
+fi
+
+# Delete old versions of the application executables from regular setup.
+# If not currently regular setup, then all executables in the version store
+# will be removed.
+echo "Cleaning up application files..."
+find "${HOME}/.local/share/claude/versions" -maxdepth 1 -type f -not -path "$(readlink -e "${HOME}/.local/bin/claude")" -delete 2> /dev/null
+
+# Remove data files.
+echo "Cleaning up data files..."
+rm --recursive --force "${HOME}/.claude/downloads"
+rm --recursive --force "${HOME}/.claude/cache"
+rm --recursive --force "${HOME}/.claude/backups"
+rm --recursive --force "${HOME}/.claude/file-history"
+rm --recursive --force "${HOME}/.claude/sessions"
+rm --recursive --force "${HOME}/.claude/projects"
+rm --recursive --force "${HOME}/.claude/plans"
+rm --recursive --force "${HOME}/.cache/claude" # Cache
+rm --recursive --force "${HOME}/.cache/claude-cli-nodejs" # Cache
+rm --recursive --force "${HOME}/.local/state/claude" # Locks
+rm --force "${HOME}/.claude/history.jsonl"
+
+# Cleanup remaining empty directories.
+echo "Cleaning up remaining empty directories..."
+find "${HOME}/.claude" -type d -empty -delete 2> /dev/null
+find "${HOME}/.local" -type d -empty -delete 2> /dev/null
+find "${HOME}/.cache" -type d -empty -delete 2> /dev/null

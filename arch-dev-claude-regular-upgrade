@@ -1,23 +1,30 @@
 #!/bin/sh
 #
-# Updates an existing Claude Code installation.#
+# Updates an existing Claude Code installation for current user.
+#
+# This is a variant assuming regular setup, corresponding to the setup
+# created by the official installation script https://claude.ai/install.sh,
+# relying on the 'claude install' command. The built-in updater can then be
+# used, either the auto-updater or by manually running the 'claude update'
+# command, which this script does. In this setup, multiple versions of the
+# executable are kept in directory ~/.local/share/claude/versions and
+# ~/.local/bin/claude is maintained as a symbolic link to the current (latest)
+# of them. Note that if the existing is standalone setup, running this script
+# (or 'claude update') will migrate it to a regular setup.
 #
 # By default Claude checks for updates on startup and periodically while
 # running, and it will download and install in the background, and they take
 # effect the next time Claude Code is started. These automatic updates can be
-# disabled.
-#
-# Manual updates can be triggered with command 'claude update'. It will look
-# up latest version, compare with existing version, and update if newer.
-#
-# The main (only) additional thing this script provides, is an update check. It
-# looks up latest version and compares with existing version, but then it asks
-# user if it should proceed with the update. This makes it possible to check
-# for new versions, without necessarily update immediately! If user decides to
-# perform the update, then this is simply done by running 'claude update'
-# command - which of course then will do its own lookup, and also repeat
-# information on output that this script already have logged: When no update it
-# reports:
+# disabled. Manual updates can be triggered with command 'claude update'. It
+# will look up latest version, compare with existing version, and update if
+# newer. The main (only) additional thing this script provides, is an update
+# check. It looks up latest version and compares with existing version, but
+# then it asks user if it should proceed with the update. This makes it
+# possible to check for new versions, without necessarily update immediately!
+# If user decides to perform the update, then this is simply done by running
+# 'claude update' command - which of course then will do its own lookup, and
+# also repeat information on output that this script already have logged: When
+# no update it reports:
 #   Current version: 2.1.90
 #   Checking for updates to latest version...
 #   Claude Code is up to date (2.1.90)
@@ -43,13 +50,22 @@ if [ ${EUID:-$(id -u)} -eq 0 ]; then
 fi
 
 echo "Finding existing version..."
-if ! command -v claude > /dev/null 2>&1; then
+existing_path=$(command -v claude 2> /dev/null)
+if [ -z "$existing_path" ]; then
     echo "The command 'claude' is not available in this shell session" >&2
+    exit 1
+fi
+if [ "$existing_path" != "${HOME}/.local/bin/claude" ]; then
+    echo "The command 'claude' is at path ${existing_path} instead of the expected '~/.local/bin/claude'" >&2
+    exit 1
+fi
+if [ ! -L "${HOME}/.local/bin/claude" ]; then
+    echo "The path '~/.local/bin/claude' is not a symbolic link so this looks like a standalone and not regular setup" >&2
     exit 1
 fi
 existing_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
 if [ -z "$existing_version" ]; then
-    echo "Failed to find existing version" >&2
+    echo "Failed to find existing version from output of command 'claude'" >&2
     exit 1
 fi
 echo "Existing version is ${existing_version}"
@@ -95,6 +111,16 @@ if [ "$latest_version" != "$existing_version" ]; then
     if ! claude update; then
         echo "Failed!" >&2
         exit 1
+    fi
+    new_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
+    if [ -z "$new_version" ]; then
+        echo "Failed to find new version from output of command 'claude'" >&2
+        exit 1
+    fi
+    if [ "$new_version" != "$latest_version" ]; then
+        echo "WARNING: The output of command 'claude' indicates this is version ${new_version} and not ${latest_version}"
+    else
+        echo "Version is now ${new_version}"
     fi
 else
     echo "Existing version ${existing_version} is up to date"

@@ -1,19 +1,23 @@
 #!/bin/sh
 #
-# Uninstalls development environment for Claude Code.
+# Uninstalls development environment for Claude Code for current user.
 #
-# This cleans up as much as possible from what an installation using script
-# arch-install-dev-claude does. Note that it may be too invasive for other
-# scenarios. It's primary use case is for testing Claude Code installations
-# etc.
+# This cleans up as much as possible from what the installation script does.
+# It cleans according known paths for a regular install, which also covers a
+# standalone install, although it does not use of all them. Assuming default
+# locations are used, i.e. well-known locations within the current user's home
+# directory, and that there is not set a custom location environment variable
+# CLAUDE_CONFIG_DIR. It can also be used for other setups, e.g. a strictly
+# official standard installation. It may be too invasive for some scenarios,
+# it's primary use case is for testing Claude Code installations etc.
 #
 # Removes the application executables and the global/user configuration. Also
 # removes any remaining empty directories from the user home, assuming if they
 # are now empty it was Claude Code that created them. The directories
 # considered are commonly used Linux directories but does not exist by default
-# in plain Arch Linux filesystem, and Claude Code installer creates them during
-# the install, so should be safe and get us most cleanly back to original state
-# if we delete them.
+# in plain Arch Linux filesystem, and Claude Code creates them during the
+# regular install procedure, or on first start, so should be safe and get us
+# most cleanly back to original state if we delete them.
 #
 # Any project directories you have worked with from Claude Code may have gotten
 # their own .claude subdirectory with project-specific configuration files.
@@ -35,23 +39,21 @@ if [ ${EUID:-$(id -u)} -eq 0 ]; then
     exit 1
 fi
 
-# Remove the application executables.
-echo "Removing application executables..."
-rm --force "${HOME}/.local/bin/claude" # Symlink to the current version of the application executable
-rm --recursive --force "${HOME}/.local/share/claude" # All versions of the application executable
+# Remove application files.
+echo "Removing application files..."
+rm --force "${HOME}/.local/bin/claude" # In regular setup this is a symlink to the current version of the application executable, in standalone this is the actual executable
+rm --recursive --force "${HOME}/.local/share/claude" # In regular setup this contains multiples versions of the actual application executable
+rm --force "${HOME}/.local/share/applications/claude-code-url-handler.desktop"
 
-# Remove configuration.
-echo "Removing configuration..."
+# Remove data files.
+echo "Removing data files..."
 rm --force "${HOME}/.claude.json" # Remove user preferences, OAuth session, state etc.
-rm --recursive --force "${HOME}/.claude" # User settings, backups, downloads, cache
+rm --recursive --force "${HOME}/.claude" # Remove default CLAUDE_CONFIG_DIR, with user settings, backups, downloads, cache
 rm --recursive --force "${HOME}/.local/state/claude" # Locks
 rm --recursive --force "${HOME}/.cache/claude" # Cache
 rm --recursive --force "${HOME}/.cache/claude-cli-nodejs" # Cache
 
-# Cleanup remaining empty directories, assuming if they are now empty it was
-# Claude Code installer that created them. These directories do not exist by
-# default in plain Arch Linux filesystem, and Claude Code installer creates
-# them during the install.
+# Cleanup remaining empty directories.
 echo "Cleaning up remaining empty directories..."
 find "${HOME}/.local" -type d -empty -delete 2> /dev/null
 find "${HOME}/.cache" -type d -empty -delete 2> /dev/null
@@ -72,7 +74,7 @@ if [ ! -d "${HOME}/.local/bin" ] && [ -f "${HOME}/.bashrc" ]; then
 fi
 
 # Claude may also create or update the global gitignore for the user, to ignore
-# local/personal project settings files, matching '**/.claude/settings.local.json'.
+# local (personal) project settings files, matching '**/.claude/settings.local.json'.
 echo "Cleaning up global git ignore..."
 if [ -f "${HOME}/.config/git/ignore" ]; then
     if grep --quiet '^\*\*/\.claude/settings\.local\.json$' "${HOME}/.config/git/ignore"; then
