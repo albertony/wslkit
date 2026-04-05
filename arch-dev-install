@@ -1,0 +1,241 @@
+#!/bin/sh
+#
+# Installs development environment for selected profiles.
+#
+# The term profile in this script represent a curated set of packages typically
+# relevant for a specific development environment.
+#
+# Profiles are specified as positional arguments before an optional --
+# separator. Any arguments after -- are passed directly to the pacman --sync
+# command, so you can add extra package names or flags such as --noconfirm
+# to run non-interactively without prompting user.
+#
+# Usage: arch-dev-install [profile...] [-- [pacman-args...]]
+#
+# Available profiles:
+#   tools   jq, BLAKE3, xxHash, 7-Zip, cURL, Wget, grep, sed, nano
+#   git     Git, Diff, SSH client/server, SSL toolkit
+#   python  Python, Pylint, Black, pytest, NumPy, IPython
+#   gcc     GCC (with bundled C and C++ frontends)
+#   cpp     GCC C/C++ compiler, GDB debugger, CMake/Ninja build system, Boost
+#   go      Go SDK
+#   dotnet  .NET SDK
+#   all     The combination of all others
+#
+# Examples:
+#   arch-dev-install git go python
+#   arch-dev-install git go gcc python -- --noconfirm
+#   arch-dev-install git cpp -- --noconfirm extra-pkg
+#
+# If the system has not been recently upgraded, which is done automatically
+# during setup by the arch-setup (arch-setup-packages) script, to ensure you
+# install the latest versions of the packages you should run the arch-upgrade
+# script first.
+#
+# This script does not refresh package database and upgrade existing packages.
+# If we were to do it, we would have to be careful not end up in a state of
+# partial upgrades (remember to either do both --refresh (-y) and
+# --sysupgrade (-u), or none of them, at least never just --refresh (-y)), and
+# then there is also the potential issue with signing keys. These are exactly
+# things that the arch-upgrade script is handling.
+#
+# NOTE: In general, assumes basic tools are already installed, including grep,
+# sed, nano, sudo, curl, wget, unzip. Either they should be preinstalled (e.g.
+# as part of the meta package base, which is preinstalled on all newer images),
+# or installed by ./arch-setup-packages included when running ./arch-setup,
+# which should have been done when setting up the distro. Some of them are
+# however included in the tools profile (will just be skipped if already
+# installed).
+#
+# TODO:
+# - More Go related:
+#   - Hugo (static site generator, written in go, not specific for use with go
+#     but often used together): hugo
+#   - Go dev support tools (but can be installed from VSCode or with "go get" command instead):
+#     - Go basic support tools (goimports, guru, etc): go-tools
+#     - Go additional support tools (delve, gopls, staticcheck): delve gopls staticcheck
+#     - Fuse library to be able to use cgofuse: fuse3
+#   - Alternative Go compiler, based on GCC: gcc-go
+# - More C++ related:
+#   - Ccache.
+#     - To trade disk space for recompilation speed.
+#     - Not installed for now to avoid it being detected and used before
+#       configured properly.
+#     - If installing ccache, should also limit the size from default 5GB, e.g.
+#       to 500MB by running 'ccache --set-config max_size=500M'. Note that this
+#       will only have effect for the current user, and will be stored as
+#       configuration file ~/.config/ccache/ccache.conf, so must run the script
+#       as the intended dev user and not root!
+#   - Valgrind (not used for now, and this is quite large - 320MiB installed)
+#   - Python (is also optional dependency of boost for python bindings)
+#   - Qt 5 (contains also dependencies of pyside2): qt5-base qt5-charts
+#   - PySide2 (Python bindings): pyside2
+#   - LevelDB headers and libraries (includes dependency snappy): leveldb
+#
+packages=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --)
+            shift
+            break
+            ;;
+        tools)
+            # Support tools.
+            # - This installs jq, BLAKE3, xxHash, 7-Zip, cURL, Wget, grep, sed
+            #   and nano.
+            # - While cURL, Wget, grep, sed and nano can be assumed to already
+            #   be installed, either preinstalled or by an initial ./arch-setup
+            #   (./arch-setup-packages), they are included here for
+            #   completeness, and will just be skipped if already installed.
+            packages="$packages jq b3sum xxhash 7zip curl wget grep sed nano"
+            ;;
+        git)
+            # Git and related tools.
+            # - This installs Git, Diff command, SSH client/server and SSL
+            #   toolkit.
+            # - Package git brings the git command, and dependencies
+            #   openssl, perl and others.
+            # - Package diffutils brings the diff command, and openssh brings
+            #   the SSH client, both of which are often used together with git
+            #   but not direct dependencies.
+            # - The SSL toolkit brought by package openssl includes the openssl
+            #   command, and the ssl/crypto libraries and development headers.
+            #   It is a dependency of many others, inluding curl, openssh, git
+            #   and python, and is therefore also typically preinstalled.
+            packages="$packages git diffutils openssh openssl"
+            ;;
+        python)
+            # Python development environment.
+            # - This installs Python 3, NumPy, Pylint, Black, pytest and
+            #   IPython.
+            # - This brings python core language support with relevant
+            #   additional extensions and tools for Python development.
+            # - NumPy includes dependencies blas, cblas and lapack.
+            # - Pylint includes dependencies python-astroid, python-colorama,
+            #   python-dill, python-isort, python-setuptools,
+            #   python-jaraco.collections, python-jaraco.functools
+            #   python-jaraco.text, python-autocommand, python-more-itertools,
+            #   python-packaging python-wheel, python-pkg_resources,
+            #   python-typing_extensions, python-mccabe, python-platformdirs,
+            #   python-tomlkit.
+            # - Black includes dependencies python-click,
+            #   python-mypy_extensions, python-packaging, python-pathspec,
+            #   python-platformdirs, python-pytokens
+            # - pytest includes dependencies python-iniconfig,
+            #   python-packaging, python-pluggy, python-pygments.
+            # - IPython includes dependencies python-argcomplete,
+            #   python-asttokens, python-decorator python-executing,
+            #   python-ipython-pygments-lexers, python-jedi,
+            #   python-matplotlib-inline, python-parso, python-pexpect,
+            #   python-prompt_toolkit, python-ptyprocess, python-pure-eval,
+            #   python-pygments, python-stack-data, python-traitlets,
+            #   python-typing_extensions, python-wcwidth.
+            # - TODO:
+            #   - python-yaml (json support is built-in with json module, toml
+            #     parsing is built-in with tomllib module, toml writing
+            #     supported by python-tomlkit included above, ini support is
+            #     built-in with configparser module, alternative
+            #     python-iniconfig included above).
+            #   - python-sphinx, python-sphinx_rtd_theme
+            #   - python-graphviz
+            #   - python-matplotlib
+            packages="$packages python python-pylint python-black python-pytest python-numpy ipython"
+            ;;
+        gcc)
+            # GCC with bundled C and C++ frontends.
+            packages="$packages gcc"
+            ;;
+        cpp)
+            # C++ development environment.
+            # - This installs GCC C/C++ compiler, GDB debugger, CMake and Ninja
+            #   build system, and Boost headers and libraries.
+            # - Focus on working with modern build system. Deliberately not
+            #   installing the base-devel package group which contains a many
+            #   of the relevant packages (gcc, binutils, make, grep, sed, sudo
+            #   etc), but also many that are preinstalled, and also some that
+            #   are not so relevant. Instead being specific on the individual
+            #   packages to install. Binutils will be included as a dependency
+            #   of gcc, and some like sed and grep are already assumed present
+            #   either by default or from arch-setup-packages.
+            # - GDB includes dependencies python, boost-libs (via
+            #   source-highlight), xxhash and more.
+            # - Boost is now split in two: Package boost contains development
+            #   headers and CMake scripts, sufficient for consuming header-only
+            #   libraries. Package boost-libs contains runtime libraries. There
+            #   is no longer an explicit dependency betweeen them (previously
+            #   boost was depending on boost-libs).
+            # - The package boost has optional dependency to python, for python
+            #   bindings. It is not included here, add the python profile when
+            #   needed.
+            packages="$packages gcc gdb cmake ninja boost boost-libs"
+            ;;
+        go)
+            # Go development environment.
+            # - This installs Go SDK.
+            # - For cgo support then gcc is also needed, add profile gcc or
+            #   cpp to get that.
+            packages="$packages go"
+            ;;
+        dotnet)
+            # .NET development environment.
+            # - This installs .NET SDK.
+            # - Package dotnet-sdk with dependencies dotnet-host,
+            #   dotnet-targeting-pack and dotnet-runtime.
+            packages="$packages dotnet-sdk"
+            ;;
+        rclone)
+            # Rclone development environment.
+            # - This installs Go SDK, Python 3, Hugo, Make and Fuse 3.
+            # - Note: This does not install the rclone application itself,
+            #   but the tools to be able to build it from source!
+            # - Only Go SDK is required. The rest are pure optional, and only
+            #   needed if one want to use specific features, or want to have a
+            #   complete environment and be able to run all the steps done by
+            #   the official workflows.
+            # - Python is needed to be able to run various utility scripts,
+            #   including scripts that generate complete Markdown documentation.
+            # - Hugo is needed to be able to generate (and serve) static HTML
+            #   website from the Markdown documentation.
+            # - Make is needed to be able to build the official makefiles.
+            # - FUSE 3 is needed at runtime to be able to use the mount command
+            #   with the mount and mount2 backends.
+            # - GCC is need to build rclone with the optional cmount backend of
+            #   the mount command, as it is cgo based. But the official release
+            #   is a statically linked binary, built without cgo, without the
+            #   cmount command, so this is truly optional and for advanced
+            #   usage - and then the caller of this script can choose to
+            #   include profile gcc or cpp, or gcc as additional package, so
+            #   gcc is not included here!
+            #packages="$packages go gcc python hugo make fuse3" # All
+            packages="$packages go python hugo make fuse3" # All except GCC
+            #packages="$packages hugo make fuse3" # Only additional packages assuming "go python gcc rclone"
+            ;;
+        all)
+            # All of the above.
+            packages="$packages \
+                jq b3sum xxhash 7zip curl wget grep sed nano \
+                git diffutils openssh openssl \
+                python python-pylint python-black python-pytest python-numpy ipython \
+                gcc gdb cmake ninja boost boost-libs \
+                go \
+                dotnet-sdk"
+            ;;
+        *)
+            echo "Unknown profile: $1" >&2
+            echo "Supported profiles: git, python, gcc, cpp, go, dotnet, all" >&2
+            echo "Additional packages can be added after a -- separator" >&2
+            exit 1
+            ;;
+    esac
+    shift
+done
+
+echo "Installing packages..."
+# SC2086: $packages is intentionally unquoted to let word splitting expand it
+# into individual package name arguments for pacman.
+# shellcheck disable=SC2086
+if ! sudo pacman --sync --needed "$@" $packages; then
+    echo "Failed!" >&2
+    exit 1
+fi

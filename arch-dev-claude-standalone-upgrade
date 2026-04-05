@@ -142,3 +142,25 @@ if [ "$latest_version" != "$existing_version" ]; then
 else
     echo "Existing version ${existing_version} is up to date"
 fi
+
+# Extra cleanup of stale PID files from crashed sessions.
+# These files are used to keep track of live concurrent REPL sessions (for
+# telemetry, not sure if anything else) and when a session ends that deletes
+# its own PID file. Crashed session will leave stale files, but normally these
+# are cleaned up on next session start. However, this is skipped in WSL, in
+# case the directory has been shared with a Claude installation on the Windows
+# host, because then it cannot be known from the WSL distro if there is a host
+# process with the given PID. Here we assume no such obscure setups are used,
+# and therefore performs our own cleaning based on running processes in WSL!
+#echo "Cleaning up stale session PID files..."
+for pid_file in "${HOME}/.claude/sessions/"*.json; do
+    if [ -e "$pid_file" ]; then
+        pid=$(basename "$pid_file" .json)
+        if echo "$pid" | grep --quiet '^[0-9][0-9]*$'; then
+            if ! kill -0 "$pid" 2>/dev/null; then
+                echo "Removing stale $pid_file (pid $pid not running)"
+                rm "$pid_file"
+            fi
+        fi
+    fi
+done

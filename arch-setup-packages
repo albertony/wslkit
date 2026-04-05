@@ -147,8 +147,11 @@ fi
 # bash, sed, grep, gawk, tar, gzip, bzip2, xz, zlib, openssl, curl, iputils,
 # iproute2, procps-ng.
 #
-# Here we install some additional tools which cannot be assumed to be included
-# in a clean minimal installation, such as sudo, unzip, wget, nano.
+# Here we install some additional tools, that are either required by other
+# features provided by this repo, or just frequently used and convenient to be
+# able to assume is always present, and which cannot be assumed to be included
+# in a clean minimal installation. This includes sudo, unzip, wget and nano.
+#
 # Could consider 7zip, which is now the official 7-zip.org version, instead of
 # unzip, although it is relatively much bigger (6.25 vs 0.3 MiB).
 #
