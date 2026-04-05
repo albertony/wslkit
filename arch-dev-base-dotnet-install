@@ -1,9 +1,8 @@
 #!/bin/sh
 #
-# Installs complete development environment for Go (golang).
+# Installs complete development environment for .NET.
 #
-# Includes gcc, for cgo support, and supporting tools such as diff, ssh and
-# git.
+# Includes supporting tools such as diff, ssh and git.
 #
 # If the system has not been recently upgraded, which is done automatically
 # during setup by the arch-setup (arch-setup-packages) script, to ensure you
@@ -25,16 +24,13 @@
 # Run script ./arch-setup first to ensure this!
 #
 
-# Install packages using utility script arch-dev-base-go-install.
-# It in turn uses utility script arch-dev-base-install, which installs base
-# packages by default:
+# Install packages using utility script arch-dev-base-install.
+# It installs base packages by default:
 # - Diff command: diffutils
 # - SSL toolkit (is also dependency of openssh, git and others): openssl
 # - SSH client/server (used with git): openssh
 # - Git client: git
-# Then arch-dev-base-go-install supplies additional packages as arguments:
-# - Go compiler: go
 # Here we supply additional packages to install as arguments.
-"$(dirname "$0")/arch-dev-base-go-install" "$@" \
-    `# GCC compiler` \
-    gcc
+"$(dirname "$0")/arch-dev-base-install" "$@" \
+    `# .NET SDK (with dependencies dotnet-host, dotnet-runtime and dotnet-targeting-pack) ` \
+    dotnet-sdk
