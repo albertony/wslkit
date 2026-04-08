@@ -33,11 +33,13 @@
 # user.
 #
 
-# Verify not running as root, since this uninstalls Claude Code for the current user.
-if [ ${EUID:-$(id -u)} -eq 0 ]; then
-    echo 'Please do not run this script as root' >&2
-    exit 1
-fi
+# If we could always assume that the distro is always set up with a non-root
+# default user, then we couuld verify we are not not running as root, since
+# this considers a local Claude Code installation for the current user only!
+#if [ ${EUID:-$(id -u)} -eq 0 ]; then
+#    echo 'Please do not run this script as root' >&2
+#    exit 1
+#fi
 
 # Remove application files.
 echo "Removing application files..."

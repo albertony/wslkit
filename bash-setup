@@ -21,7 +21,7 @@ fi
 
 # Verify not running with sudo.
 # This would not work, since the environment variables are then stripped to a
-# minimimum and specifically the WSL_DISTRO_NAME will not be available.
+# minimum and specifically the WSL_DISTRO_NAME will not be available.
 if [ -n "$SUDO_UID" ]; then
     echo 'Please run this script as actual root and not just sudo' >&2
     exit 1
@@ -95,7 +95,7 @@ EOF
             cp /etc/skel/.bashrc "$dir"
         else
             echo "Creating with hard coded default content"
-            # Creating with exact content from /etc/skel/.bash_profile in Arch.
+            # Creating with exact content from /etc/skel/.bashrc in Arch.
             # We could have merged in all changes below to get the complete
             # file immediately, but we do it to easier keep track of the origin.
             cat > "$file" << 'EOF'
@@ -223,7 +223,7 @@ EOF
             echo "$def" >> "$file"
         fi
     done
-    unset def name # value line
+    unset def name # Currently unused: value line
 
     # Define aliases
     # - ls alias for colored output by default (already exists by default in Arch)

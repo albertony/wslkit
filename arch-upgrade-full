@@ -31,7 +31,7 @@
 #   pacman --sync --refresh --refresh --needed archlinux-keyring && pacman --sync --sysupgrade --sysupgrade && pacman --query --deps --unrequired --unrequired --quiet | pacman --remove --nosave --recursive -; pacman --sync --clean
 # And if switching to short form of all options, the one-liner can be made as short as this:
 #   pacman -Syy --needed archlinux-keyring && pacman -Suu && pacman -Qttdq | pacman -Rns -; pacman -Sc
-# If necessary, sudo must be added to all pacman commands, exept the
+# If necessary, sudo must be added to all pacman commands, except the
 # "pacman -Qttdq" / "pacman --query --deps --unrequired --unrequired --quiet".
 # Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
 # at least never just --refresh (-y) which will easily lead to a bad state of partial

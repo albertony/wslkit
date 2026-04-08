@@ -1,0 +1,43 @@
+#!/bin/sh
+#
+# Create convenience aliases for Claude Code for current user.
+#
+# Note: This is not done automatically on install, and therefore uninstall will
+# not remove them either.
+#
+
+# If we could always assume that the distro is always set up with a non-root
+# default user, then we couuld verify we are not not running as root, since
+# this considers a local Claude Code installation for the current user only!
+#if [ ${EUID:-$(id -u)} -eq 0 ]; then
+#    echo 'Please do not run this script as root' >&2
+#    exit 1
+#fi
+
+echo "Ensuring generic convenience aliases are defined in bash user profile..."
+. "$(dirname "${0}")/arch-dev-claude-aliases"
+
+echo "Ensuring custom convenience aliases are defined in bash user profile..."
+if [ ! -f "${HOME}/.bashrc" ]; then
+    echo "Failed to find bash user profile '~/.bashrc'" >&2
+    exit 1
+fi
+for def in \
+    "ccu=$(realpath "$(dirname "$0")/arch-dev-claude-standalone-upgrade")"
+do
+    name="${def%%=*}" # %%=* strips from the first = to the end (the name)
+    value="${def#*=}" # #*= strips up to and including the first = (the value)
+    line="alias ${name}='${value}'"
+    if grep -q "^${line}$" "${HOME}/.bashrc"; then
+        echo "Skipping ${line}: Already defined"
+    else
+        old=$(grep "^alias ${name}=" "${HOME}/.bashrc")
+        if [ -n "$old" ]; then
+            echo "Commenting out existing ${old}"
+            sed -i -r "s/^(\\s*alias\\s+${name}=.*)$/#\\1/" "${HOME}/.bashrc"
+        fi
+        unset old
+        echo "Adding ${line}"
+        printf '%s\n' "${line}" >> "${HOME}/.bashrc"
+    fi
+done

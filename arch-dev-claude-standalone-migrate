@@ -18,14 +18,17 @@
 # environment variable CLAUDE_CONFIG_DIR.
 #
 
-if [ ${EUID:-$(id -u)} -eq 0 ]; then
-    echo 'Please do not run this script as root' >&2
-    exit 1
-fi
+# If we could always assume that the distro is always set up with a non-root
+# default user, then we couuld verify we are not not running as root, since
+# this considers a local Claude Code installation for the current user only!
+#if [ ${EUID:-$(id -u)} -eq 0 ]; then
+#    echo 'Please do not run this script as root' >&2
+#    exit 1
+#fi
+
 if [ ! -L "${HOME}/.local/bin/claude" ]; then
     echo "The path '~/.local/bin/claude' is not a symbolic link so this already looks like a standalone setup" >&2
     exit 1
 fi
 mv "$(readlink -e "${HOME}/.local/bin/claude")" "${HOME}/.local/bin/claude" && rm --recursive --force "${HOME}/.local/share/claude/versions"
-find "${HOME}/.local/share/claude/versions" -maxdepth 1 -type f -not -path "$(readlink -e "${HOME}/.local/bin/claude")" -delete 2> /dev/null
 find "${HOME}/.local" -type d -empty -delete 2> /dev/null

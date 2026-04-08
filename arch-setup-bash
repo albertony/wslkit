@@ -1,0 +1,49 @@
+#!/bin/sh
+#
+# Configure bash shell environment.
+#
+# This wraps the bash-setup script that sets up a generic bash shell
+# environment. Then it adds customizations that may be specific for Arch Linux
+# distributions, when running in WSL, or assuming utility scripts are available.
+# This currently means adding alias for running the arch-upgrade script.
+#
+
+# Verify running as root (not relying on sudo which may not be installed yet).
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root' >&2
+    exit 1
+fi
+
+echo "Setting up generic bash shell environment..."
+. "$(dirname "${0}")/bash-setup"
+
+echo "Customizing bash shell environment..."
+(find /home -mindepth 1 -maxdepth 1 -type d -print0 && printf '%s\0' /root) | while read -d $'\0' dir; do
+    user=$(basename "$dir")
+    echo "Checking user profile ${user}..."
+    file="$dir/.bashrc"
+    for def in \
+        "au=$(realpath "$(dirname "$0")/arch-upgrade")" \
+        "aun=$(realpath "$(dirname "$0")/arch-upgrade --noconfirm")" \
+        "auf=$(realpath "$(dirname "$0")/arch-upgrade-full")" \
+        "aufn=$(realpath "$(dirname "$0")/arch-upgrade-full --noconfirm")"
+    do
+        name="${def%%=*}" # %%=* strips from the first = to the end (the name)
+        value="${def#*=}" # #*= strips up to and including the first = (the value)
+        line="alias ${name}='${value}'"
+        if grep -q "^${line}$" "$file"; then
+            echo "Skipping ${line}: Already defined"
+        else
+            old=$(grep "^alias ${name}=" "$file")
+            if [ -n "$old" ]; then
+                echo "Commenting out existing ${old}"
+                sed -i -r "s/^(\\s*alias\\s+${name}=.*)$/#\\1/" "$file"
+            fi
+            unset old
+            echo "Adding ${line}"
+            printf '%s\n' "${line}" >> "$file"
+        fi
+    done
+    unset def name value line
+done
+unset dir

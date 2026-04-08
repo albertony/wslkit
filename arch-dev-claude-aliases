@@ -1,0 +1,74 @@
+#!/bin/sh
+#
+# Create convenience aliases for Claude Code for current user.
+#
+# Using prefix cc for Claude Code, and an additional letter as suffix
+# indicating the variant.
+# - ccn (new):
+#   - Start REPL and create new session.
+#   - This simply runs the 'claude' executable without arguments.
+# - ccc (continue):
+#   - Start REPL and continue previous session. This fails if there are none.
+#   - This runs with argument --continue.
+# - ccs (stealth):
+#   - Start REPL without storing session, prompt history and file history.
+#   - This sets undocumented environment variable CLAUDE_CODE_SKIP_PROMPT_HISTORY
+#     that disables prompt history, and also session persinstance (despite the name).
+#   - This sets documented environment variable CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING
+#     that disables file history storage.
+# - ccp (print):
+#   - Run command line prompt single prompt and print response, without
+#     entering REPL, and without creating and persisting it as a session.
+#   - This runs with command line arguments --print and --no-session-persistence.
+# TODO?
+# - ccd (dangerously-skip-permissions)
+#   - Run with disabled permission prompts and safety checks, so tool calls
+#     execute immediately.
+#   - This runs with command line argument '--dangerously-skip-permissions',
+#     equivalent to '--permission-mode bypassPermissions'.
+# - cca (auto permission mode):
+#   - Run without permission prompts, but using background safety checks that
+#     blocks untrusted actions.
+#   - Command line argument '--permission-mode auto'.
+# - ccu (update)
+#   - Update. Run custom update script, but if so then which one?
+#
+
+# If we could always assume that the distro is always set up with a non-root
+# default user, then we couuld verify we are not not running as root, since
+# this considers a local Claude Code installation for the current user only!
+#if [ ${EUID:-$(id -u)} -eq 0 ]; then
+#    echo 'Please do not run this script as root' >&2
+#    exit 1
+#fi
+
+if [ ! -f "${HOME}/.bashrc" ]; then
+    echo "Failed to find bash user profile '~/.bashrc'" >&2
+    exit 1
+fi
+
+for def in \
+    "ccn=claude" \
+    "ccc=claude --continue" \
+    "ccs=CLAUDE_CODE_SKIP_PROMPT_HISTORY=1 CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1 claude" \
+    "ccp=claude --no-session-persistence --print"
+    #"ccd=claude --dangerously-skip-permissions" \
+    #"cca=claude --permission-mode auto"
+do
+    name="${def%%=*}" # %%=* strips from the first = to the end (the name)
+    value="${def#*=}" # #*= strips up to and including the first = (the value)
+    line="alias ${name}='${value}'"
+    if grep -q "^${line}$" "${HOME}/.bashrc"; then
+        echo "Skipping ${line}: Already defined"
+    else
+        old=$(grep "^alias ${name}=" "${HOME}/.bashrc")
+        if [ -n "$old" ]; then
+            echo "Commenting out existing ${old}"
+            sed -i -r "s/^(\\s*alias\\s+${name}=.*)$/#\\1/" "${HOME}/.bashrc"
+        fi
+        unset old
+        echo "Adding ${line}"
+        printf '%s\n' "${line}" >> "${HOME}/.bashrc"
+    fi
+done
+unset def name value line

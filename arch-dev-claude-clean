@@ -11,11 +11,11 @@
 # inative this long). The time is configurable with settings.json parameter
 # cleanupPeriodDays, and it is considered by session persistence and file
 # history. Despite what the documentation says, it seems one can set value 0 to
-# turn off the persistance. There are also be an undocumented environment
+# turn off the persistence. There are also be an undocumented environment
 # variable CLAUDE_CODE_SKIP_PROMPT_HISTORY that can be set turn off the prompt
-# history persitance, but also session persistance. Officially there is
+# history persistence, but also session persistence. Officially there is
 # command-line argument --no-session-persistence that claude can be started
-# with to disable session persistance for that instance. As of Claude Code
+# with to disable session persistence for that instance. As of Claude Code
 # version 2.1.92, there are no built in method to get rid of these things on
 # demand, and it is not that clear what data is persisted when and for how
 # long. This script can be used for a thorough clean to be sure. For an even
@@ -36,11 +36,13 @@
 # environment variable CLAUDE_CONFIG_DIR.
 #
 
-# Verify not running as root, since this uninstalls Claude Code for the current user.
-if [ ${EUID:-$(id -u)} -eq 0 ]; then
-    echo 'Please do not run this script as root' >&2
-    exit 1
-fi
+# If we could always assume that the distro is always set up with a non-root
+# default user, then we couuld verify we are not not running as root, since
+# this cleans Claude Code for the current user only.
+#if [ ${EUID:-$(id -u)} -eq 0 ]; then
+#    echo 'Please do not run this script as root' >&2
+#    exit 1
+#fi
 
 # Delete old versions of the application executables from regular setup.
 # If not currently regular setup, then all executables in the version store

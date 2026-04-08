@@ -50,7 +50,7 @@
 #
 # NOTE:
 # - Be careful if there are more than one major version between the current
-#   and the latest version. You sould probably upgrade one version at a time.
+#   and the latest version. You should probably upgrade one version at a time.
 #   Specify version code as command line argument to control this.
 # - The script has no logic on version numbers or ordering of versions,
 #   so if running the script with argument "testing" upgrading to latest testing

@@ -7,11 +7,16 @@
 # Therefore we start by configuring a package repository mirror, and then
 # initialize the pacman keyring.
 #
-# When setting mirror, this just moves away any existing mirrorlist file by
-# adding suffix .old.<random>, and then creates a new file with a single
-# specific mirror. Cannot assume tools such as grep or sed are available to
-# check if there are already mirrors enabled in the file (TODO: We could have
-# used gawk, see below, but we may or may not find it..?).
+# When setting mirror, this moves away any existing mirrorlist file by adding
+# suffix .old.<random>, and then creates a new file with a single specific
+# mirror. Will try to check if the mirror is already enabled in the file, but
+# does not assume tools grep, sed or awk are available to perform this check
+# properly, because in old versions of the bootstrap archive they were not
+# included, and of course we need to setup pacman before we can install them
+# (see arch-setup-packages). If none of the tools are available, then using a
+# fallback method which is very simplistic and may end up recreating the file
+# unnecessary.
+#
 # On a clean bootstrap archive there is a default mirrorlist file that contains
 # all mirrors commented out. The official Arch WSL distro bundles a custom
 # mirrorlist file with two mirrors configured. It currently prefers the
@@ -51,7 +56,7 @@
 # command. It does enough that "pacman-key --populate archlinux" can be run
 # next (and that fails without the initial "pacman-key --init"), after which
 # we are able to install packages (which we can not without these two
-# commands). Don't know the state of the generated keys in this sitation, so
+# commands). Don't know the state of the generated keys in this situation, so
 # would probably want to install gawk and reset the keys as described here:
 # https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys
 # But gawk is actually installed by default, it is just not not available as
@@ -68,6 +73,38 @@ if [ ${EUID:-$(id -u)} -ne 0 ]; then
     exit 1
 fi
 
+# Make sure awk is linked.
+# It is required by pacman-key --init as described above.
+# We can therefore also rely on it when checking mirror configuration before
+# running the pacman-key --init command!
+awk=/usr/bin/awk
+if [ -e "$awk" ]; then
+    if [ -x "$awk" ]; then
+        echo "Required awk command found at $awk";
+    else
+        # Strange - it exists but is not an executable file!?
+        echo "WARNING: Required awk command not found, 'pacman-key --init' will probably report an error. When this script is completed, you should consider resetting all the pacman keys as described here: https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys"
+    fi
+else
+    # Find any *awk* executable in /usr/bin.
+    realawk=$(find /usr/bin -type f -executable -name "*awk*" -print -quit)
+    if [ -z "$realawk" ]; then
+        echo "WARNING: Required awk command not found, 'pacman-key --init' will probably report an error. When this script is completed, you should consider resetting all the pacman keys as described here: https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys"
+    else
+        # Found an alternative awk command, e.g. /usr/bin/gawk-5.1.0, make a copy of that as /usr/bin/awk.
+        if [ -h "$awk" ]; then
+            # Primary awk command path exists but is a symlink to non-existing file.
+            # Locate the target of the symlink, so we can copy into that instead
+            # of replacing the symlink!
+            awk=$(readlink --canonicalize --no-newline /usr/bin/awk)
+        fi
+        echo "NOTICE: Required awk command missing but found $realawk, so will copy it to $awk"
+        cp "$realawk" "$awk"
+    fi
+    unset realawk
+fi
+unset awk
+
 # Configure package repository mirror.
 # If there is an existing mirrorlist file, we check if the requested package
 # repository mirror is the first, or primary, of all active/uncommented
@@ -83,7 +120,19 @@ mirrorhost=${ARCH_SETUP_MIRROR:-https://fastly.mirror.pkgbuild.com}
 mirrorconfig="Server = ${mirrorhost}/\$repo/os/\$arch"
 echo "Configuring package repository mirror ${mirrorhost}"
 if [ -f "/etc/pacman.d/mirrorlist" ]; then
-    mirrorlist=$(grep '^Server = ' /etc/pacman.d/mirrorlist)
+    # Making no assumptions, grep was not always included in the bootstrap
+    # archive, and we need to setup pacman before we can install any additional
+    # tools (see arch-setup-packages).
+    if command -v grep > /dev/null 2>&1; then
+        mirrorlist=$(grep '^Server = ' /etc/pacman.d/mirrorlist)
+    elif command -v sed > /dev/null 2>&1; then
+        mirrorlist=$(sed -n '/^Server = /p' /etc/pacman.d/mirrorlist)
+    elif command -v awk > /dev/null 2>&1; then
+        mirrorlist=$(awk '/^Server = /' /etc/pacman.d/mirrorlist)
+    else
+        echo "WARNING: Doing a simplistic check for existing configuration because grep/sed/awk is missing"
+        mirrorlist="$(tail --lines=1 /etc/pacman.d/mirrorlist 2> /dev/null)"
+    fi
     if [ -z "$mirrorlist" ]; then
         mirrorcount=0
     else
@@ -128,35 +177,6 @@ else
     fi
 fi
 unset mirrorconfig mirrorhost
-
-# Make sure awk is linked.
-awk=/usr/bin/awk
-if [ -e "$awk" ]; then
-    if [ -x "$awk" ]; then
-        echo "Required awk command found at $awk";
-    else
-        # Strange - it exists but is not an executable file!?
-        echo "WARNING: Required awk command not found, 'pacman-key --init' will probably report an error. When this script is completed, you should consider resetting all the pacman keys as described here: https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys"
-    fi
-else
-    # Find any *awk* executable in /usr/bin.
-    realawk=$(find /usr/bin -type f -executable -name "*awk*" -print -quit)
-    if [ -z "$realawk" ]; then
-        echo "WARNING: Required awk command not found, 'pacman-key --init' will probably report an error. When this script is completed, you should consider resetting all the pacman keys as described here: https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys"
-    else
-        # Found an alternative awk command, e.g. /usr/bin/gawk-5.1.0, make a copy of that as /usr/bin/awk.
-        if [ -h "$awk" ]; then
-            # Primary awk command path exists but is a symlink to non-existing file.
-            # Locate the target of the symlink, so we can copy into that instead
-            # of replacing the symlink!
-            awk=$(readlink --canonicalize --no-newline /usr/bin/awk)
-        fi
-        echo "NOTICE: Required awk command missing but found $realawk, so will copy it to $awk"
-        cp "$realawk" "$awk"
-    fi
-    unset realawk
-fi
-unset awk
 
 # Initialize pacman.
 if [ -e /etc/pacman.d/gnupg ]; then

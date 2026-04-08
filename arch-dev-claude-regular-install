@@ -60,11 +60,14 @@
 #   https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases/bootstrap.sh
 #
 
-# Verify not running as root, since this installs Claude Code for the current user.
-if [ ${EUID:-$(id -u)} -eq 0 ]; then
-    echo 'Please do not run this script as root' >&2
-    exit 1
-fi
+# If we could always assume that the distro is always set up with a non-root
+# default user, then we couuld verify we are not not running as root, since
+# this considers a local Claude Code installation for the current user only!
+#if [ ${EUID:-$(id -u)} -eq 0 ]; then
+#    echo 'Please do not run this script as root' >&2
+#    exit 1
+#fi
+
 
 if [ -f "${HOME}/.local/bin/claude" ]; then
     echo "There is an existing file '~/.local/bin/claude' so Claude Code is probably already installed!" >&2
