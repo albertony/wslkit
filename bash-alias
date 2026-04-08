@@ -1,0 +1,115 @@
+#!/bin/sh
+#
+# Configure aliases in bash shell profile.
+#
+# By default considers the current user's profile, ~/.bashrc, a different file
+# may be specified as argument.
+#
+# One or more alias definitions can be given as arguments with form
+# "name=value", i.e. without the alias command itself first. The value part
+# should be supplied unquoted, as the single quotes will be automatically added
+# when creating the alias command: alias "name='value'". This will break if the
+# value itself contains single quotes, so option --raw can be supplied if you
+# want to take charge of the quoting yourself, then the entire string will be
+# supplied to the alias command verbatim.
+#
+# The main advantages of using this script are simpler syntax for bulk creating
+# multiple aliases, and checking for existing aliases. If an existing alias
+# with same name exists that is reported, if the value is identical then the
+# existing is kept, if not then the existing is commented out and the new one
+# is added.
+#
+# Examples:
+#   bash-alias "ls=ls --color=auto"
+#   bash-alias --raw "ls='ls --color=auto'"
+#   bash-alias ~/.bashrc "ls=ls --color=auto" "grep=grep --color=auto"
+#   bash-alias --raw ~/.bashrc "ls='ls --color=auto'" "grep='grep --color=auto'"
+#
+
+if [ $# -lt 1 ]; then
+    echo "Missing arguments" >&2
+    echo "Usage: ${0} [--raw] [file] name=value..." >&2
+    exit 1
+fi
+
+# Handle options.
+# They may be anywhere in the list of arguments, looking for any prefixed
+# with '-', except the special end of options marker "--", recognizing
+# flag --raw, warning about any other.
+raw=0
+for arg in "$@"; do
+    case "$arg" in
+        --raw) raw=1 ;;
+        --) break ;;
+        -*) printf 'Unknown flag: %s\n' "$arg" >&2; exit 1 ;;
+    esac
+done
+unset arg
+
+# Handle file argument.
+# Optional with fall-back to ~/.bashrc.
+# This may be anywhere in the list of arguments, looking for the first that
+# is not an option (handled above) and does not contain '=', assuming it must
+# then be a file path.
+file=""
+for arg in "$@"; do
+    case "$arg" in
+        -*) continue ;; # Ignore (option, already handled)
+        *=*) continue ;; # Ignore (alias, will be handled later)
+        *)
+            if [ -n "$file" ]; then
+                printf 'Invalid argument (expected name=value): %s\n' "$arg" >&2
+                exit 1
+            fi
+            file="$arg"
+            ;;
+    esac
+done
+unset arg
+if [ -z "$file" ]; then
+    file="${HOME}/.bashrc"
+fi
+if [ ! -f "$file" ]; then
+    echo "Failed to find bash user profile '${file}'" >&2
+    exit 1
+fi
+
+# Process aliases.
+for definition in "$@"; do
+    case "$definition" in
+        *=*) ;;
+        *) continue ;; # Ignore (already handled)
+    esac
+    name="${definition%%=*}" # %%=* strips from the first = to the end (the name)
+    # Verify valid name.
+    # Name is required, i.e. cannot be empty, definition cannot be just in form
+    # "=value". Other than that name can be just about anything, however the
+    # shell unconditionally interprets the first word before a space as the
+    # command so in reality the name cannot contain space. This will also catch
+    # arguments incorrectly including the alias command, e.g.
+    # "alias ls='ls --color=auto'" (should be "ls=ls --color=auto").
+    case "$name" in
+        ''|*' '*) printf 'Skipping invalid alias (name is empty or contains space): %s\n' "$definition" >&2; continue ;;
+    esac
+    name_escaped=$(printf '%s' "$name" | sed 's/[]\.^$*[]/\\&/g') # Escape BRE metacharacters
+    value="${definition#*=}" # #*= strips up to and including the first = (the value)
+    if [ "$raw" -eq 1 ]; then
+        line="alias ${name}=${value}"
+    else
+        line="alias ${name}='${value}'"
+    fi
+    line_escaped=$(printf '%s' "$line" | sed 's/[]\.^$*[]/\\&/g')
+    if grep -q "^${line_escaped}$" "$file"; then
+        echo "Skipping ${line}: Already defined"
+    else
+        old=$(grep "^alias ${name_escaped}=" "$file")
+        if [ -n "$old" ]; then
+            echo "Commenting out existing ${old}"
+            sed -i "s/^\(\\s*alias\\s\+${name_escaped}=.*\)$/#\\1/" "$file"
+        fi
+        unset old
+        echo "Adding ${line}"
+        printf '%s\n' "${line}" >> "$file"
+    fi
+done
+unset raw file definition name name_escaped value line line_escaped

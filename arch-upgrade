@@ -2,15 +2,17 @@
 #
 # Update package database and upgrade packages to latest version.
 #
-# This is intended for regular updates, relying on cached package database
-# without forcing a refresh and upgrading but not downgrading packages. The
-# main update is performed by a pacman command with the -Syu option, which
-# seems to be the recommended approach for normal upgrades on Arch Linux.
+# By default this performs a regular update: it refreshes the package database
+# without forcing a refresh if it appears to be up-to-date, and upgrades
+# packages without allowing downgrades. The main upgrade is performed by a
+# pacman command with the -Syu option, which seems to be the recommended
+# approach for normal upgrades on Arch Linux.
 #
-# For a more thorough and intrusive full upgrade, use arch-upgrade-full.
-# The only differences between these two are that it forces update of package
-# database using double --refresh options, and allow downgrading package using
-# double --sysupgrade options.
+# With the --force option this instead performs a full forced update: it forces
+# a refresh of the package database even if it appears to be up-to-date, using
+# double --refresh options, and allows downgrading packages using double
+# --sysupgrade options. This is usually only necessary when switching package
+# repositories.
 #
 # This takes a thorough, robust and clean approach. It accounts for changes to
 # the signing keys, which may otherwise lead to errors such as "unknown trust"
@@ -26,14 +28,23 @@
 # known as orphans. Finally, it cleans up the package database (cache), removing
 # packages that are no longer installed to free up disk space.
 #
-# Passes any script arguments to the pacman commands, so can execute script with
-# --noconfirm for instance to run non-interactively proceeding without prompting
-# user.
+# Options:
+#   --force             Force package database refresh and allow downgrades.
+#   --noconfirm         Do not prompt for confirmation (passed to pacman).
+#   --noprogressbar     Do not show progress bar (passed to pacman).
+#   --quiet, -q         Suppress output where possible (passed to pacman).
+#   --verbose, -v       Produce extra/verbose output (passed to pacman).
+#   --color <when>      Colorize output: always, never, or auto (passed to pacman).
 #
-# Everything done in this script could be boiled down to the following one-liner:
+# Everything done in this script could be boiled down to the following one-liner
+# for the regular (default) case:
 #   pacman --sync --refresh --needed archlinux-keyring && pacman --sync --sysupgrade && pacman --query --deps --unrequired --unrequired --quiet | pacman --remove --nosave --recursive -; pacman --sync --clean
 # And if switching to short form of all options, the one-liner can be made as short as this:
 #   pacman -Sy --needed archlinux-keyring && pacman -Su && pacman -Qttdq | pacman -Rns -; pacman -Sc
+# For the forced full upgrade (--force):
+#   pacman --sync --refresh --refresh --needed archlinux-keyring && pacman --sync --sysupgrade --sysupgrade && pacman --query --deps --unrequired --unrequired --quiet | pacman --remove --nosave --recursive -; pacman --sync --clean
+# And if switching to short form of all options:
+#   pacman -Syy --needed archlinux-keyring && pacman -Suu && pacman -Qttdq | pacman -Rns -; pacman -Sc
 # If necessary, sudo must be added to all pacman commands, except the
 # "pacman -Qttdq" / "pacman --query --deps --unrequired --unrequired --quiet".
 # Remember to either do both --refresh (-y) and --sysupgrade (-u), or none of them,
@@ -44,22 +55,53 @@
 # Run script ./arch-setup first to ensure this!
 #
 
+# Parse arguments.
+# The argument --force is consumed here. All other recognized options are
+# collected into args_passthrough and then used to rebuild $@ to be passed
+# through to all pacman commands.
+force=0
+args_passthrough=
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --force)                                force=1; shift ;;
+        --noconfirm|--noprogressbar|--quiet|-q|--verbose|-v) args_passthrough="${args_passthrough} $1"; shift ;;
+        --color=*)                              args_passthrough="${args_passthrough} $1"; shift ;;
+        --color)
+            [ $# -ge 2 ] || { printf 'Missing value for --color\n' >&2; exit 1; }
+            args_passthrough="${args_passthrough} $1 $2"; shift 2 ;;
+        *) printf 'Unknown argument: %s\n' "$1" >&2; exit 1 ;;
+    esac
+done
+# Intentional unquoted expansion: word splitting rebuilds $@ correctly here
+# because all passthrough argument values (e.g. "always" for --color) are
+# single words containing no whitespace or glob characters.
+# shellcheck disable=SC2086
+set -- $args_passthrough
+unset args_passthrough
+
 #
-# Update the package database if necessary.
-# Not forcing a refresh even if it appear to be up-to-date, could add another
-# --refresh to do that.
+# Update the package database.
+# In regular mode: refreshes only if needed (single --refresh).
+# In forced mode: forces refresh even if it appears up-to-date (double --refresh).
 #
-# Note that this is a bit bit dangerous to do without upgrading packages as
+# Note that this is a bit dangerous to do without upgrading packages as
 # well, since it may lead to a bad state of partial upgrades, but it is
 # intentional because we want to install/upgrade the keyring package first,
 # before we upgrade all packages.
 #
-#
 echo
-echo "Ensuring package database is updated..."
-if ! sudo pacman --sync --refresh "$@"; then
-    echo "Failed!" >&2
-    exit 1
+if [ "$force" -eq 1 ]; then
+    echo "Forcing update of package database..."
+    if ! sudo pacman --sync --refresh --refresh "$@"; then
+        echo "Failed!" >&2
+        exit 1
+    fi
+else
+    echo "Ensuring package database is updated..."
+    if ! sudo pacman --sync --refresh "$@"; then
+        echo "Failed!" >&2
+        exit 1
+    fi
 fi
 
 #
@@ -68,7 +110,7 @@ fi
 # The package archlinux-keyring contains the official set of keys. Assuming
 # it is preinstalled: Newer versions of Arch comes with the "base" meta package
 # preinstalled, and newer versions of that includes the archlinux-keyring package.
-# Previously the archlinux-keyring package would be implicitely included as pacman
+# Previously the archlinux-keyring package would be implicitly included as pacman
 # version 6.0.1-5 and older had a dependency to it, but pacman version 6.0.1-6
 # removed the dependency to archlinux-keyring, and archlinux-keyring version
 # 20220713-2 added dependency to pacman instead, and then base version 3-1 was
@@ -87,25 +129,41 @@ if ! sudo pacman --sync --needed "$@" archlinux-keyring; then
 fi
 
 #
-# Upgrade any outdated packages.
-# Not performing another database refresh at this point, could add --refresh to do that,
-# and even twice if we wanted to force the refresh.
-# Not allowing downgrading packages to match the version currently in cache, which are
-# usually only relevant when switching package repositories and performing a full upgrade,
-# could add another --sysupgrade to do that - and it would interactively prompt for
-# confirmation before proceeding should any be found, unless --noconfirm is also added.
+# Upgrade packages.
+# In regular mode: upgrades outdated packages without allowing downgrades (single
+# --sysupgrade). Not performing another database refresh at this point, could add
+# --refresh to do that, and even twice if we wanted to force the refresh.
+# In forced mode: also allows downgrading packages to match the version currently
+# in cache (double --sysupgrade), which is usually only relevant when switching
+# package repositories and performing a full upgrade. It will interactively prompt
+# for confirmation before proceeding should any downgrades be found, which could
+# be avoided by adding --noconfirm.
 #
 echo
-echo "Upgrading any outdated packages..."
-if ! sudo pacman --sync --sysupgrade "$@"; then
-    echo "Failed!" >&2
-    echo "NOTE: The package database was previously successfully updated, but since the" >&2
-    echo "upgrading of existing packages failed, make sure to repeat this script until it" >&2
-    echo "succeeds, at least do not install any new packages before existing packages has" >&2
-    echo "been successfully upgraded, or else you may get into a bad state of partial" >&2
-    echo "upgrades!" >&2
-    exit 1
+if [ "$force" -eq 1 ]; then
+    echo "Performing full upgrade/downgrade of packages..."
+    if ! sudo pacman --sync --sysupgrade --sysupgrade "$@"; then
+        echo "Failed!" >&2
+        echo "NOTE: The package database was previously successfully updated, but since the" >&2
+        echo "upgrading of existing packages failed, make sure to repeat this script until it" >&2
+        echo "succeeds, at least do not install any new packages before existing packages has" >&2
+        echo "been successfully upgraded, or else you may get into a bad state of partial" >&2
+        echo "upgrades!" >&2
+        exit 1
+    fi
+else
+    echo "Upgrading any outdated packages..."
+    if ! sudo pacman --sync --sysupgrade "$@"; then
+        echo "Failed!" >&2
+        echo "NOTE: The package database was previously successfully updated, but since the" >&2
+        echo "upgrading of existing packages failed, make sure to repeat this script until it" >&2
+        echo "succeeds, at least do not install any new packages before existing packages has" >&2
+        echo "been successfully upgraded, or else you may get into a bad state of partial" >&2
+        echo "upgrades!" >&2
+        exit 1
+    fi
 fi
+unset force
 
 #
 # Uninstall any unrequired packages left behind (orphans).
@@ -142,3 +200,11 @@ if ! sudo pacman --sync --clean "$@"; then
     echo "Failed!" >&2
     exit 1
 fi
+
+# TODO: Cleaning sometimes fails like this:
+#   removing old packages from cache...
+#   error: could not open file /var/cache/pacman/pkg/download-KDRHFL: Error reading fd 7
+#   error: could not open file /var/cache/pacman/pkg/download-VXGpSD: Error reading fd 7
+# Workaround seem to be to do this:
+#   sudo rm -rf /var/cache/pacman/pkg/download-*/
+# But why are not pacman able to delete them?

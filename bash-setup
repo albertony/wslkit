@@ -226,8 +226,14 @@ EOF
     unset def name # Currently unused: value line
 
     # Define aliases
-    # - ls alias for colored output by default (already exists by default in Arch)
-    # - grep alias colored output by default (does not exist by default)
+    # - ls alias for automatic colored output by default (already exists by default in Arch)
+    # - grep alias for automatic colored output by default (does not exist by default)
+    # TODO:
+    # - pacman alias for automatic colored output by default (does not exist by default)
+    #   - Automatic colored output can also be enabled by option Color in /etc/pacman.conf
+    # - diff alias for automatic colored output by default (does not exist by default)
+    #   - This assumes package diffutils has been installed, which is not by default.
+    #
     for def in \
         "ls=ls --color=auto" \
         "grep=grep --color=auto"

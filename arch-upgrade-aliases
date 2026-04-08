@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+# Create convenience aliases for running arch-upgrade script for current user.
+#
+# NOTE: Including pacman option '--color auto'. This can be configured
+# permanently by uncommenting option "Color" in /etc/pacman.conf, and this was
+# later added to arch-setup-pacman so assuming it has been used and it suceeded
+# we could drop this now...
+#
+
+"$(dirname "${0}")/bash-alias" "$@" \
+    "au=$(realpath "$(dirname "$0")/arch-upgrade") --color auto" \
+    "aun=$(realpath "$(dirname "$0")/arch-upgrade") --color auto --noconfirm"
+    # Variants with additional option --force, but this is only needed in very
+    # special cases, and then executing aliases au/aun with --force is
+    # more than convenient enough!
+    #"auf=$(realpath "$(dirname "$0")/arch-upgrade") --color auto --force"
+    #"aufn=$(realpath "$(dirname "$0")/arch-upgrade") --color auto --force --noconfirm"

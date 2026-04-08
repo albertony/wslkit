@@ -5,7 +5,8 @@
 # Assuming this script is run immediately after a clean install, we must ensure
 # that pacman is configured to be able to install the packages we want.
 # Therefore we start by configuring a package repository mirror, and then
-# initialize the pacman keyring.
+# initialize the pacman keyring. In addition, configures some relevant options
+# in pacman.conf, mostly for convenience.
 #
 # When setting mirror, this moves away any existing mirrorlist file by adding
 # suffix .old.<random>, and then creates a new file with a single specific
@@ -22,7 +23,7 @@
 # mirrorlist file with two mirrors configured. It currently prefers the
 # worldwide CDN mirror from Fastly, a sponsor of the Arch project providing
 # Hosting/CDN services. This mirror is not a traditional mirror, but a Content
-# Delivery Network service, caching content directly from the authorative
+# Delivery Network service, caching content directly from the authoritative
 # source mirror.pkgbuild.com that is running on the Arch Linux Team's own
 # infrastructure. Previously the default mirrorlist was configured with the
 # Arch Linux Team's own worldwide GeoDNS mirror service, distributing requests
@@ -59,11 +60,11 @@
 # commands). Don't know the state of the generated keys in this situation, so
 # would probably want to install gawk and reset the keys as described here:
 # https://wiki.archlinux.org/index.php/Pacman/Package_signing#Resetting_all_the_keys
-# But gawk is actually installed by default, it is just not not available as
-# "awk"! There is a symlink /usr/bin/awk pointing to /usr/bin/gawk, but
+# But gawk is actually installed by default, it is just not available as "awk"!
+# There is a symlink /usr/bin/awk pointing to /usr/bin/gawk, but
 # /usr/bin/gawk does not exist, while there is an executable
 # /usr/bin/gawk-5.1.0 which does! So we find it and copy it into /usr/bin/awk
-# (or rather /usr/bin/gawk which /usr/bin/awk is an symlink to). Reinstalling
+# (or rather /usr/bin/gawk which /usr/bin/awk is a symlink to). Reinstalling
 # the gawk package would have done the same.
 #
 
@@ -74,9 +75,10 @@ if [ ${EUID:-$(id -u)} -ne 0 ]; then
 fi
 
 # Make sure awk is linked.
-# It is required by pacman-key --init as described above.
-# We can therefore also rely on it when checking mirror configuration before
-# running the pacman-key --init command!
+# It is required by pacman-key --init as described above. Since we do not want
+# to assume tools such as grep or sed are available for manipulation of
+# configuration files elsewhere in this script, this means we can consider awk
+# as a tool, and therefore we do this section early!
 awk=/usr/bin/awk
 if [ -e "$awk" ]; then
     if [ -x "$awk" ]; then
@@ -177,6 +179,103 @@ else
     fi
 fi
 unset mirrorconfig mirrorhost
+
+# Configure pacman options by uncommenting, commenting out, or adding them in
+# /etc/pacman.conf. Options prefixed with '#' will be commented out (disabled),
+# others will be uncommented (enabled).
+#
+# Assuming normally using a proper terminal emulator that handles escape codes
+# etc, the following options are set:
+# - "Color"
+#   - Enables automatic coloring with option "Color" (feature introduced with
+#     pacman 4.1).
+#   - This corresponds to running pacman with option "--color auto".
+#   - It can be temporarily disabled back to original setting by running with
+#     option "--color never".
+# - "#NoProgressBar"
+#   - Re-enables the progress bar by commenting out option "NoProgressBar".
+#   - The NoProgressBar option can be temporarily re-enabled by running
+#     pacman with --noprogressbar.
+# - "VerbosePkgLists"
+#   - Displays a more detailed tabular format of packages to be
+#     upgraded/installed/removed, including old version, new version, and size
+#     changes.
+# - "#CheckSpace"
+#   - Disables the check for available disk space before installing packages.
+#   - Not particularly relevant in WSL, with virtualized, dynamically expanding
+#     disk.
+#
+# The pacman.conf in the original Arch pacman package has "#Color" and
+# "#NoProgressBar" (both commented out), but the Arch WSL image has merged in
+# changes from the Arch Devtools repo into its chroot build environment, and it
+# sets the same "#Color" while changing to uncommented "NoProgressBar". It does
+# that probably to ensure there is no noise from escape codes and progress bars
+# in build logs, and this "leaks" into the WSL image. We want to get the
+# progress bar back as in the original, and we want the additional coloring,
+# assuming WSL distro is typically used interactively and from a capable
+# terminal. The Devtools repo also changes to "VerbosePkgLists", which provides
+# a more detailed tabular format of packages to be upgraded/installed/removed,
+# which is quite informative and therefore we keep that - and sets it if not
+# already set. Finally, the Devtools repo also changes to "#CheckSpace", with a
+# note: "We cannot check disk space from within a chroot environment". This
+# seems sensible to keep in WSL as well, as the free space of a virtualized
+# dynamically expanding disk is not so relevant.
+# https://gitlab.archlinux.org/archlinux/devtools/-/blob/master/config/pacman/extra.conf
+echo "Configuring pacman options"
+for option in Color "#NoProgressBar" "#CheckSpace" "VerbosePkgLists"; do
+    echo "Checking ${option}"
+    if [ "${option#\#}" = "$option" ]; then
+        active_pat="^${option}$"
+        active_val="${option}"
+        inactive_pat="^#${option}$"
+    else
+        option="${option#\#}"
+        active_pat="^#${option}$"
+        active_val="#${option}"
+        inactive_pat="^${option}$"
+    fi
+    state=missing
+    if command -v grep > /dev/null 2>&1; then
+        grep -q "$active_pat"   /etc/pacman.conf && state=active
+        grep -q "$inactive_pat" /etc/pacman.conf && state=inactive
+    elif command -v sed > /dev/null 2>&1; then
+        [ -n "$(sed -n "/${active_pat}/p"   /etc/pacman.conf)" ] && state=active
+        [ -n "$(sed -n "/${inactive_pat}/p" /etc/pacman.conf)" ] && state=inactive
+    elif command -v awk > /dev/null 2>&1; then
+        awk "/${active_pat}/{found=1}END{exit 1-found}"   /etc/pacman.conf && state=active
+        awk "/${inactive_pat}/{found=1}END{exit 1-found}" /etc/pacman.conf && state=inactive
+    else
+        echo "WARNING: Cannot detect state without grep, sed, or awk, skipping" >&2
+        continue
+    fi
+    case "$state" in
+        active)
+            echo "Already set"
+            ;;
+        inactive)
+            echo "Changing existing option"
+            if command -v sed > /dev/null 2>&1; then
+                tmp=$(mktemp)
+                sed "s/${inactive_pat}/${active_val}/" /etc/pacman.conf > "$tmp" \
+                    && mv "$tmp" /etc/pacman.conf || { echo "Failed!" >&2; rm -f "$tmp"; exit 1; }
+                unset tmp
+            elif command -v awk > /dev/null 2>&1; then
+                tmp=$(mktemp)
+                awk "/${inactive_pat}/{print \"${active_val}\"; next} {print}" /etc/pacman.conf > "$tmp" \
+                    && mv "$tmp" /etc/pacman.conf || { echo "Failed!" >&2; rm -f "$tmp"; exit 1; }
+                unset tmp
+            else
+                echo "WARNING: Cannot modify without sed or awk, skipping" >&2
+            fi
+            ;;
+        missing)
+            echo "Adding as new option"
+            printf '\n%s\n' "$active_val" >> /etc/pacman.conf \
+                || { echo "Failed!" >&2; exit 1; }
+            ;;
+    esac
+done
+unset option active_pat active_val inactive_pat state
 
 # Initialize pacman.
 if [ -e /etc/pacman.d/gnupg ]; then

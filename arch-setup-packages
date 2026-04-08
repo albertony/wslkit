@@ -2,8 +2,8 @@
 #
 # Force package database update, perform full package upgrade/downgrade, and install basic utilities.
 #
-# This is intended for initial setup. For later upgrades, use arch-upgrade or
-# arch-upgrade-full instead. This script does everything that arch-upgrade-full
+# This is intended for initial setup. For later upgrades, use arch-upgrade
+# instead. This script does everything that arch-upgrade with argument --force
 # does, except this does not rely on sudo (which may not be installed yet) and
 # must therefore be run as root, and it does the additional task of checking the
 # timezone database and installing basic utilities if missing.

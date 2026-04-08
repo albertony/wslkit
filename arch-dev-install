@@ -3,7 +3,14 @@
 # Installs development environment for selected profiles.
 #
 # The term profile in this script represent a curated set of packages typically
-# relevant for a specific development environment.
+# relevant for a specific development environment. Multiple profiles can be
+# combined, as well as individual packages. The intention with this script is
+# to make it easier to remember and to install the basic set of packages
+# frequently used in different development environments, to quicly set up new
+# (and reinstall) WSL distributions. Also, an related intention is to make it
+# convenient to install these sets of packages in a single pacman invocation,
+# so that the dependency resolution is done once for all, to improve
+# performance and reduce risk of problems.
 #
 # Profiles are specified as positional arguments before an optional --
 # separator. Any arguments after -- are passed directly to the pacman --sync
@@ -11,20 +18,22 @@
 # to run non-interactively without prompting user. Multiple profiles and
 # extra packages can be specified. Any duplicate packages will be silently
 # ignored. Packages already installed and up-to-date will not be reinstalled
-# (pacman flag --needed is always).
+# (pacman flag --needed is always used).
 #
 # Usage: arch-dev-install [profile...] [-- [pacman-args...]]
 #
 # Available generic profiles:
-#   tools   jq, BLAKE3, xxHash, 7-Zip, cURL, Wget, grep, sed, nano
-#   git     Git, Diff, SSH client/server, SSL toolkit
-#   python  Python 3, Pylint, Black, pytest, NumPy, IPython
+#   tools   jq, BLAKE3, xxHash, 7-Zip, Info-ZIP, Diff, Patch, nano, Wget, cURL,
+#           sed, grep
+#   git     Git, SSH client/server, SSL toolkit
+#   python  Python, IPython, Pylint, Black, pytest, PyYAML, TOML Kit
 #   cpp     GCC C/C++ compiler, GDB debugger, CMake/Ninja build system, Boost
 #   go      Go SDK
 #   dotnet  .NET SDK
+#   aspnet  .NET SDK, ASP.NET Core
 #
 # Available project profiles:
-#   rclone  Go SDK, Python 3, Hugo, Make, Fuse 3
+#   rclone  Go SDK, Python, Hugo, Make, Fuse
 #
 # Available meta profiles:
 #   generic The combination of all generic profiles, but no project profiles
@@ -45,20 +54,18 @@
 # exactly things that the arch-upgrade script is handling.
 #
 # TODO:
-# - More tools related:
-#   - zip and unzip
-#     - Already includes 7zip.
-#     - unzip installed by arch-setup-packages, but not zip.
-# - More Go related:
-#   - Hugo
-#     - Static site generator, written in go, not specific for use with go but
-#       often used together.
+# - Extend Go environment
+#   - Alternative Go compiler, based on GCC: gcc-go
 #   - Go dev support tools (but can be installed from VSCode or with "go get" command instead):
 #     - Go basic support tools (goimports, guru, etc): go-tools
 #     - Go additional support tools (delve, gopls, staticcheck): delve gopls staticcheck
 #     - Fuse library to be able to use cgofuse: fuse3
-#   - Alternative Go compiler, based on GCC: gcc-go
-# - More C++ related:
+#   - Hugo
+#     - Static site generator, written in go.
+#     - Not specific for use with go, so could consider it a tool as well, but
+#       often used in go projects.
+#     - Quite large, over 80 MiB.
+# - Extend C++ environment
 #   - vcpkg
 #     - Installing package or just set up manually? The package provides the
 #       vcpkg binary (vcpkg-tool) and a profile script that disables vcpkg
@@ -70,6 +77,8 @@
 #       script to get a local copy of the vcpkg binary etc.
 #   - Cppcheck
 #     - Static analysis tool (linter).
+#     - Not too big, under 20 MiB, but depends on Python if not installing that
+#       then may very well lead to more than 100 MiB added disk usage.
 #   - Clang (LLVM Toolset).
 #     - C/C++ compiler. Alternative to GCC, although still includes GCC as
 #       dependency due to reuse of its standard library, linker and runtime.
@@ -79,77 +88,135 @@
 #       include in default C/C++ environment.
 #     - Relevant to combine with its dedicated debugger LLDB.
 #   - Ccache.
-#     - To trade disk space for recompilation speed.
-#     - Not installed for now to avoid it being detected and used before
-#       configured properly.
-#     - If installing ccache, should also limit the size from default 5GB, e.g.
-#       to 500MB by running 'ccache --set-config max_size=500M'. Note that this
-#       will only have effect for the current user, and will be stored as
-#       configuration file ~/.config/ccache/ccache.conf, so must run the script
-#       as the intended dev user and not root!
+#     - Very useful for increased recompilation speed, at cost of disk space.
+#     - Small package itself, only around 2 MiB installed, or up to 10 MiB with
+#       dependencies (which includes xxhash, libblake3 and fmt), but when used
+#       its primary intention is to use disk for caching compilation output.
+#     - When installed, build systems may automatically detect it and start
+#       using it, so should not install it without that as an intention.
+#     - If installing, should consider limiting the disk usage more than the
+#       default 5GB, e.g. set 500MB by running
+#       'ccache --set-config max_size=500M'. Note that this will be stored in
+#       configuration file ~/.config/ccache/ccache.conf, and will only have
+#       effect for the current user, so must execute that as the intended dev
+#       user and not as root!
+#   - Valgrind
+#     - Depends on perl (like git also does).
+#     - Adds around 75 MiB installed size, or 150 MiB with all dependencies.
+#   - Python
+#     - We already have a dedicated profile for Python, but it may also be
+#       relevant in a C++ environment, e.g. it is an optional dependency of
+#       boost required for its python bindings, and a dependency of the
+#       alternative shiboken python bindings (which are used by PySide).
 #   - Doxygen
-#   - Valgrind (not used for now, and this is quite large - 320MiB installed)
-#   - Python (is also optional dependency of boost for python bindings)
-#   - Qt 5 (contains also dependencies of pyside2): qt5-base qt5-charts
-#   - PySide2 (Python bindings): pyside2
-#   - LevelDB headers and libraries (includes dependency snappy): leveldb
-# - Node.js/npm environment
+#     - Code documentation system.
+#   - Qt
+#     - Cross-platform application and UI framework.
+#   - PySide
+#     - Official Python for accessing the Qt framework from Python.
+#     - Includes dependency shiboken, for C++ python bindings.
+#   - LevelDB
+#     - A fast and lightweight key/value database library.
+#     - Includes dependency snappy, a compressor/decompressor library.
+#     - Only about 0.5 MiB installed with its single dependency.
+# - Add Node.js/npm environment
+#   - Package npm includes package nodejs as dependency, and in total around
+#     90 MiB installed.
 #
 
 # Generic profile "tools": Basic support tools.
-# - This installs jq, BLAKE3, xxHash, 7-Zip, cURL, Wget, grep, sed and nano.
-# - In general we can assume cURL, Wget, grep, sed and nano are already
-#   installed, either preinstalled (e.g. as part of the meta package base,
-#   which is preinstalled on all newer images) or installed by
-#   ./arch-setup-packages included when running ./arch-setup, which should have
-#   been done when setting up the distro. However, we include them here as
-#   well, for completeness, and just in case, and since they will just be
-#   skipped if already installed.
-profile_tools="jq b3sum xxhash 7zip curl wget grep sed nano"
+# - This installs jq, BLAKE3, xxHash, 7-Zip, Info-ZIP, Diff, Patch, nano,
+#   Wget, cURL, sed and grep.
+# - Package diffutils and patch brings the classic diff and patch utilities.
+# - Info-ZIP is distributed as two separate packages, zip and unzip. In general
+#   its features overlaps with 7-Zip, and in general 7-Zip has a lot more
+#   features, but Info-ZIP is so small (0.5 MiB vs 6.25 MiB for 7-Zip) and
+#   historically so widely used, that it makes sense to include it as well.
+#   If installing vcpkg, then both zip and unzip are dependencies as well.
+# - In general we can assume cURL, sed and grep are already installed (as part
+#   of the meta package base, which is preinstalled on all newer images), and
+#   also unzip, nano and Wget (installed by ./arch-setup-packages, included
+#   when running ./arch-setup, which should have been done when setting up the
+#   distro. However, we include them here as well, for completeness, and just
+#   in case, and since they will just be skipped if already installed.
+profile_tools="jq b3sum xxhash 7zip zip unzip diffutils patch nano wget curl sed grep"
 
 # Generic profile "git": Git and related tools.
-# - This installs Git, Diff command, SSH client/server and SSL toolkit.
-# - Package git brings the git command, and dependencies openssl, perl and
-#   others.
-# - Package diffutils brings the diff command, and openssh brings the SSH
-#   client, both of which are often used together with git but not direct
-#   dependencies.
+# - This installs Diff, Patch, Git, SSH client/server and SSL toolkit.
+# - Package git brings the git command, with dependencies openssl, perl and
+#   more.
+# - Package openssh brings the SSH client, very relevant to use in combination
+#   with git, but is not a direct dependencies.
 # - The SSL toolkit brought by package openssl includes the openssl command,
 #   and the ssl/crypto libraries and development headers. It is a dependency
-#   of many others, inluding curl, openssh, git and python, and is therefore
-#   also typically preinstalled.
-profile_git="git diffutils openssh openssl"
+#   of many others, including curl, openssh, git and python, and is therefore
+#   also typically preinstalled. This script does touch existing packages, and
+#   when openssl is preinstalled, as it typically is, pacman will still consider
+#   it "installed as a dependency for another package" even if we explicit
+#   specify it here.
+profile_git="git openssh openssl"
 
 # Generic profile "python": Python development environment.
-# - This installs Python 3, NumPy, Pylint, Black, pytest and IPython.
-# - This brings python core language support with relevant additional
-#   extensions and tools for Python development.
-# - NumPy includes dependencies blas, cblas and lapack.
-# - Pylint includes dependencies python-astroid, python-colorama, python-dill,
-#   python-isort, python-setuptools, python-jaraco.collections,
-#   python-jaraco.functools, python-jaraco.text, python-autocommand,
-#   python-more-itertools, python-packaging, python-wheel,
-#   python-pkg_resources, python-typing_extensions, python-mccabe,
-#   python-platformdirs, python-tomlkit.
-# - Black includes dependencies python-click, python-mypy_extensions,
-#   python-packaging, python-pathspec, python-platformdirs, python-pytokens.
-# - pytest includes dependencies python-iniconfig, python-packaging,
-#   python-pluggy, python-pygments.
-# - IPython includes dependencies python-argcomplete, python-asttokens,
-#   python-decorator, python-executing, python-ipython-pygments-lexers,
-#   python-jedi, python-matplotlib-inline, python-parso, python-pexpect,
-#   python-prompt_toolkit, python-ptyprocess, python-pure-eval,
-#   python-pygments, python-stack-data, python-traitlets,
-#   python-typing_extensions, python-wcwidth.
-# - TODO:
-#   - python-yaml (json support is built-in with json module, toml parsing is
-#     built-in with tomllib module, toml writing supported by python-tomlkit
-#     included above, ini support is built-in with configparser module,
-#     alternative python-iniconfig included above).
-#   - python-sphinx, python-sphinx_rtd_theme
-#   - python-graphviz
-#   - python-matplotlib
-profile_python="python python-pylint python-black python-pytest python-numpy ipython"
+# - This installs Python, IPython, Pylint, Black, pytest, PyYAML and TOML Kit.
+# - This brings python core language support with a few frequently used,
+#   or small nice to have, additional extensions and tools for Python
+#   development.
+# - A lot of additional python packages will be included as dependencies.
+#   It may make sense to explicit specify some of them as well, to make pacman
+#   consider them "explicitly installed" instead of "installed as a dependency
+#   for another package".
+#   - Pylint includes dependencies python-astroid, python-colorama,
+#     python-dill, python-isort, python-setuptools, python-jaraco.collections,
+#     python-jaraco.functools, python-jaraco.text, python-autocommand,
+#     python-more-itertools, python-packaging, python-wheel,
+#     python-pkg_resources, python-typing_extensions, python-mccabe,
+#     python-platformdirs, python-tomlkit.
+#   - Black includes dependencies python-click, python-mypy_extensions,
+#     python-packaging, python-pathspec, python-platformdirs, python-pytokens.
+#     - From the opposite perspective, Black is an optional dependency of
+#       IPython, so it makes sense to include both of these together.
+#   - pytest includes dependencies python-iniconfig, python-packaging,
+#     python-pluggy, python-pygments.
+#   - IPython includes dependencies python-argcomplete, python-asttokens,
+#     python-decorator, python-executing, python-ipython-pygments-lexers,
+#     python-jedi, python-matplotlib-inline, python-parso, python-pexpect,
+#     python-prompt_toolkit, python-ptyprocess, python-pure-eval,
+#     python-pygments, python-stack-data, python-traitlets,
+#     python-typing_extensions, python-wcwidth.
+# - JSON support is built-in with json module, TOML parsing is built-in with
+#   tomllib module, TOML writing supported by python-tomlkit which is a
+#   dependency of pylint, INI support is built-in with configparser module and
+#   alternative python-iniconfig is a dependency of pytest. Here we specify
+#   python-tomlkit to make it explicitly installed, and add package python-yaml
+#   to get YAML support as well, and then all of these formats should be well
+#   covered from the start.
+# - NOTE: There are a lot of other packages which may often be relevant, but it
+#   may differ a lot between use cases, and some of them are quite large, so it
+#   is better to let them be explicitly specified when needed, or consider
+#   adding additional profiles for them. Some of the ones that are considered:
+#   - NumPy (python-numpy)
+#     - Scientific tools.
+#     - Includes dependencies blas, cblas and lapack.
+#     - Quite large, over 60 MiB with dependencies.
+#   - Matplotlib (python-matplotlib)
+#     - Plotting library, designed to work with NumPy.
+#     - Package python-matplotlib, which depends on python-numpy and quite many
+#       other dependencies, adding around 200 MiB disk usage.
+#   - Sphinx (python-sphinx)
+#     - Documentation generator.
+#     - Depends on Babel, an internationalizing package, python-babel.
+#     - Can be combined with a lot of extra extensions, e.g. a Read the Docs
+#       theme (python-sphinx_rtd_theme).
+#     - Adds about 70 MiB installed size with dependencies.
+#   - Graphviz (python-graphviz)
+#     - Graph visualization.
+#     - Package python-graphviz is official Python language bindings, a tiny
+#       package, but depends on graphviz which contains the complete native
+#       application (with includes and libraries).
+#     - The core graphviz package has decent size of about 10 MiB, but includes
+#       a large dependency tree with some large dependencies, such as
+#       ghostscript and x265, so may easy add 250 MiB disk usage.
+profile_python="python ipython python-pylint python-black python-pytest python-yaml python-tomlkit"
 
 # Generic profile "cpp": C++ development environment.
 # - This installs GCC C/C++ compiler, GDB debugger, CMake and Ninja build
@@ -166,7 +233,7 @@ profile_python="python python-pylint python-black python-pytest python-numpy ipy
 # - Boost is now split in two: Package boost contains development headers and
 #   CMake scripts, sufficient for consuming header-only libraries. Package
 #   boost-libs contains runtime libraries. There is no longer an explicit
-#   dependency betweeen them (previously boost was depending on boost-libs).
+#   dependency between them (previously boost was depending on boost-libs).
 # - The package boost has optional dependency to python, for python bindings.
 #   It is not included here, add the python profile when needed.
 profile_cpp="gcc gdb cmake ninja boost boost-libs"
@@ -179,12 +246,25 @@ profile_go="go"
 
 # Generic profile "dotnet": .NET development environment.
 # - This installs .NET SDK.
-# - Package dotnet-sdk with dependencies dotnet-host, dotnet-targeting-pack
-#   and dotnet-runtime.
+# - The package dotnet-sdk includes dependencies dotnet-host,
+#   dotnet-targeting-pack and dotnet-runtime.
+# - Note that in contrast to a standard SDK installation in Windows, this only
+#   contains the core .NET feature Microsoft.NETCore.App. To get the ASP.NET
+#   feature Microsoft.AspNetCore.App as well, additional packages
+#   aspnet-targeting-pack and aspnet-runtime must be installed. This adds
+#   70 MiB installed size, to the already almost 500 MiB. The separate
+#   profile "aspnet" can be used to get this.
 profile_dotnet="dotnet-sdk"
 
+# Generic profile "aspnet": ASP.NET Core development environment.
+# - This installs .NET SDK, with additional ASP.NET features,
+#   as described for the profile "dotnet" above. Note that this is a
+#   superset of the "dotnet" profile, so there is no need to specify
+#   both (but it does not harm either).
+profile_aspnet="dotnet-sdk aspnet-runtime aspnet-targeting-pack"
+
 # Project profile "rclone": Rclone development environment.
-# - This installs Go SDK, Python 3, Hugo, Make and Fuse 3.
+# - This installs Go SDK, Python, Hugo, Make and Fuse.
 # - Note: This does not install the rclone application itself, but the tools
 #   for working with the source code and build it from source!
 # - Only Go SDK is really required. The rest are optional, and only needed if
@@ -195,8 +275,8 @@ profile_dotnet="dotnet-sdk"
 # - Hugo is needed to be able to generate (and serve) static HTML website
 #   from the Markdown documentation.
 # - Make is needed to be able to build the official makefiles.
-# - FUSE 3 is needed at runtime to be able to use the mount command with the
-#   mount and mount2 backends. Its a small, 0.5 MiB
+# - FUSE is needed at runtime to be able to use the mount command with the
+#   mount and mount2 backends. It's small at 0.5 MiB installed size.
 # - GCC is needed to build rclone with the optional cmount backend of the
 #   mount command, as it is cgo based. But the official release is a
 #   statically linked binary, built without cgo, without the cmount command,
@@ -220,18 +300,25 @@ while [ $# -gt 0 ]; do
         cpp)     packages="$packages $profile_cpp" ;;
         go)      packages="$packages $profile_go" ;;
         dotnet)  packages="$packages $profile_dotnet" ;;
+        aspnet)  packages="$packages $profile_aspnet" ;;
         rclone)  packages="$packages $profile_rclone" ;;
         generic) packages="$packages $profile_generic" ;;
         all)     packages="$packages $profile_all" ;;
         *)
             echo "Unknown profile: $1" >&2
-            echo "Supported profiles: tools, git, python, cpp, go, dotnet, rclone, generic, all" >&2
+            echo "Supported profiles: tools, git, python, cpp, go, dotnet, aspnet, rclone, generic, all" >&2
             echo "Additional packages can be added after a -- separator" >&2
             exit 1
             ;;
     esac
     shift
 done
+
+if [ -z "$packages" ] && [ $# -eq 0 ]; then
+    echo "No profiles specified." >&2
+    echo "Usage: arch-dev-install [profile...] [-- [pacman-args...]]" >&2
+    exit 1
+fi
 
 echo "Installing packages..."
 # SC2086: $packages is intentionally unquoted to let word splitting expand it

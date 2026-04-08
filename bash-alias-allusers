@@ -1,0 +1,24 @@
+#!/bin/sh
+#
+# Configure bash shell alias definitions in .bashrc file of all users.
+#
+# Examples:
+#   bash-alias-allusers "ls=ls --color=auto" "grep=grep --color=auto"
+#
+
+# Verify running as root
+if [ ${EUID:-$(id -u)} -ne 0 ]; then
+    echo 'Please run this script as root' >&2
+    exit 1
+fi
+
+(find /home -mindepth 1 -maxdepth 1 -type d -print0 && printf '%s\0' /root) | while read -d $'\0' dir; do
+    user=$(basename "$dir")
+    echo "Checking user profile ${user}..."
+    file="$dir/.bashrc"
+    if [ -f "$file" ]; then
+        "$(dirname "${0}")/bash-alias" "$file" "$@"
+    else
+        echo "Failed to find bash user profile '${file}' for user '${user}'" >&2
+    fi
+done
