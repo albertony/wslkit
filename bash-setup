@@ -1,6 +1,6 @@
 #!/bin/sh
 #
-# Configure bash shell environment.
+# Configure generic bash shell environment.
 #
 # In WSL environment, make sure prompt and terminal title contains the WSL
 # distro name instead of the hostname, which is that of the WSL host.
@@ -61,7 +61,8 @@ fi
     echo "Checking user profile ${user}..."
 
     echo "Checking .bash_profile..."
-    if [ ! -f "$dir/.bash_profile" ]; then
+    file="$dir/.bash_profile"
+    if [ ! -f "$file" ]; then
         echo "No existing file"
         if [ -f "/etc/skel/.bash_profile" ]; then
             echo "Copying from skeleton file"
@@ -69,7 +70,7 @@ fi
         else
             echo "Creating with hard coded default content"
             # Creating with exact content from /etc/skel/.bash_profile in Arch.
-            cat > "$dir/.bash_profile" << 'EOF'
+            cat > "$file" << 'EOF'
 #
 # ~/.bash_profile
 #
@@ -79,14 +80,15 @@ EOF
         # Note: The following assumes name of home directory always matches
         # the username. Using chown --reference="$dir" would be safer, but it
         # does not work with BusyBox chown.
-        chown "${user}:${user}" "$dir/.bash_profile"
+        chown "${user}:${user}" "$file"
     else
         echo "Found existing file"
         echo "Skipping: Not checking this just assuming it is correct"
     fi
 
     echo "Checking .bashrc..."
-    if [ ! -f "$dir/.bashrc" ]; then
+    file="$dir/.bashrc"
+    if [ ! -f "$file" ]; then
         echo "No existing file"
         if [ -f "/etc/skel/.bashrc" ]; then
             echo "Copying from skeleton file"
@@ -96,7 +98,7 @@ EOF
             # Creating with exact content from /etc/skel/.bash_profile in Arch.
             # We could have merged in all changes below to get the complete
             # file immediately, but we do it to easier keep track of the origin.
-            cat > "$dir/.bashrc" << 'EOF'
+            cat > "$file" << 'EOF'
 #
 # ~/.bashrc
 #
@@ -110,12 +112,10 @@ PS1='[\u@\h \W]\$ '
 EOF
         fi
         # Note: Same as for .bash_profile above!
-        chown "${user}:${user}" "$dir/.bashrc"
+        chown "${user}:${user}" "$file"
     else
         echo "Found existing file"
     fi
-
-    file="$dir/.bashrc"
 
     # Configure shell prompt for WSL
     # Commenting out any existing assignment of PS1 variable in .bashrc, and
@@ -183,13 +183,12 @@ EOF
         else
             echo "Updating shell prompt for WSL"
             sed -i -r 's/^(\s*PS1=.*)$/#\1/' "$file"
-            echo "$prompt" >> "$file"
+            printf '%s\n' "$prompt" >> "$file"
         fi
         unset prompt prompt_regex
     fi
-    unset user
 
-    # Configure shell history:
+    # Configure shell history
     # - Append local history to file instead of overwriting, to keep history from multiple parallel sessions.
     # - Do not record repeated commands more than once, and do not record commands prefixed with space.
     # - Record max 1000 entries in memory (bash default is 500 if not overridden by global config)
@@ -202,41 +201,55 @@ EOF
         echo "Adding histappend shell option"
         echo "shopt -s histappend" >> "$file"
     fi
-    if grep -q "^HISTCONTROL=ignoreboth$" "$file"; then
-        echo "Skipping history control variable: Already configured"
-    else
-        echo "Adding history control variable"
-        sed -i -r 's/^(\s*(export\s+)?HISTCONTROL=.*)$/#\1/' "$file"
-        echo "HISTCONTROL=ignoreboth" >> "$file"
-    fi
-    if grep -q "^HISTSIZE=1000$" "$file"; then
-        echo "Skipping history size variable: Already configured"
-    else
-        echo "Adding history size variable"
-        sed -i -r 's/^(\s*(export\s+)?HISTSIZE=.*)$/#\1/' "$file"
-        echo "HISTSIZE=1000" >> "$file"
-    fi
-    if grep -q "^HISTFILESIZE=2000$" "$file"; then
-        echo "Skipping history file size variable: Already configured"
-    else
-        echo "Adding history file size variable"
-        sed -i -r 's/^(\s*(export\s+)?HISTFILESIZE=.*)$/#\1/' "$file"
-        echo "HISTFILESIZE=2000" >> "$file"
-    fi
-    # Configure ls alias for colored output by default (already exists by default in Arch)
-    if grep -q "^alias ls='ls --color=auto'$" "$file"; then
-        echo "Skipping ls auto color alias: Already configured"
-    else
-        echo "Adding ls auto color alias"
-        echo "alias ls='ls --color=auto'" >> "$file"
-    fi
-    # Configure grep alias colored output by default (does not exist by default)
-    if grep -q "^alias grep='grep --color=auto'$" "$file"; then
-        echo "Skipping grep auto color alias: Already configured"
-    else
-        echo "Adding grep auto color alias"
-        echo "alias grep='grep --color=auto'" >> "$file"
-    fi
-    unset file
+
+    # Define variables
+    for def in \
+        "HISTCONTROL=ignoreboth" \
+        "HISTSIZE=1000" \
+        "HISTFILESIZE=2000"
+    do
+        name="${def%%=*}" # %%=* strips from the first = to the end (the name)
+        #value="${def#*=}" # #*= strips up to and including the first = (the value)
+        if grep -q "^${def}$" "$file"; then
+            echo "Skipping variable ${def}: Already defined"
+        else
+            old=$(grep "^${name}=" "$file")
+            if [ -n "$old" ]; then
+                echo "Commenting out existing variable ${old}"
+                sed -i -r "s/^(\\s*(export\\s+)?${name}=.*)$/#\\1/" "$file"
+            fi
+            unset old
+            echo "Adding variable ${def}"
+            echo "$def" >> "$file"
+        fi
+    done
+    unset def name # value line
+
+    # Define aliases
+    # - ls alias for colored output by default (already exists by default in Arch)
+    # - grep alias colored output by default (does not exist by default)
+    for def in \
+        "ls=ls --color=auto" \
+        "grep=grep --color=auto"
+    do
+        name="${def%%=*}" # %%=* strips from the first = to the end (the name)
+        value="${def#*=}" # #*= strips up to and including the first = (the value)
+        line="alias ${name}='${value}'"
+        if grep -q "^${line}$" "$file"; then
+            echo "Skipping ${line}: Already defined"
+        else
+            old=$(grep "^alias ${name}=" "$file")
+            if [ -n "$old" ]; then
+                echo "Commenting out existing ${old}"
+                sed -i -r "s/^(\\s*alias\\s+${name}=.*)$/#\\1/" "$file"
+            fi
+            unset old
+            echo "Adding ${line}"
+            printf '%s\n' "${line}" >> "$file"
+        fi
+    done
+    unset def name value line
+
+    unset user file
 done
 unset dir
