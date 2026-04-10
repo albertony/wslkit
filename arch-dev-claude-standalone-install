@@ -7,7 +7,9 @@
 #
 # Includes additional dependencies and configuration for running sandboxed
 # mode, and with curated initial configuration for privacy and minimized
-# unnecessary network traffic.
+# unnecessary network traffic. Also improves XDG Base Directory conformance
+# by configuring Claude to use ~/.config/claude rather than cluttering the
+# home directory root with ~/.claude and ~/.claude.json.
 #
 # This is a variant which creates a bit more standalone setup than the regular
 # setup created by for instance the official installation script
@@ -29,7 +31,8 @@
 # setup! So to keep this "standalone" setup, update must be done manually by
 # downloading and replacing the binary. The utility script
 # arch-dev-claude-standalone-upgrade will do that! To migrate back to
-# standalone setup the following command should work:
+# standalone setup when default paths are used, the following command should
+# work:
 #   mv "$(readlink ~/.local/bin/claude)" ~/.local/bin/claude && rm -rf ~/.local/share/claude/versions
 #
 # The official installation method is by running a bootstrapper script
@@ -48,7 +51,7 @@
 # - Run the downloaded application executable with argument "install", to
 #   perform the built-in installation procedure. This installs the executable
 #   into ~/.local/share/claude/versions, creates symlink ~/.local/bin/claude,
-#   and creates  directory structure in home (~/.claude.json, ~/.claude/,
+#   and creates directory structure in home (~/.claude.json, ~/.claude/,
 #   ~/.cache/, ~/.local/ etc). Without arguments, this installs the latest
 #   version, but can also specify "latest", "stable" or a specific version.
 #   Note that this actually downloads the application executable it installs,
@@ -63,16 +66,24 @@
 # This installs packages for the optional dependencies socat and bubblewrap,
 # required for the sandboxing mode. Then downloads the latest version of the
 # application executable into the user-specific local install location, making
-# it available as path ~/.local/bin/claude. Finally, this creates a curated
-# initial configuration in current user's ~/.claude/settings.json. First of all
-# this disables the built-in auto-updater, which is necessary to keep the
-# standalone setup! It also enables the sandbox mode with regular permissions
-# (not auto-allow) by default, disables all MCP servers so that user later must
-# explicitly allow any to be used, and disables automatic addition of the
-# official plugin marketplace on first run so that user can decide later if it
-# should be added manually. Also, it disables telemetry, error reporting,
-# feedback prompts and dynamic updating of terminal title based on conversation
-# context.
+# it available as path ~/.local/bin/claude. It also ensures ~/.local/bin is
+# added to PATH in ~/.bashrc for future shell sessions. Then it creates a
+# curated initial configuration in current user's Claude configuration file
+# (settings.json). First of all this disables the built-in auto-updater, which
+# is necessary to keep the standalone setup! It also enables the sandbox mode
+# with regular permissions (not auto-allow) by default, disables all MCP
+# servers so that user later must explicitly allow any to be used, and disables
+# automatic addition of the official plugin marketplace on first run so that
+# user can decide later if it should be added manually. Also, it disables
+# telemetry, error reporting, feedback prompts and dynamic updating of terminal
+# title based on conversation context. Finally, it ensures CLAUDE_CONFIG_DIR is
+# set in ~/.bashrc pointing to the XDG-based configuration directory
+# (~/.config/claude by default in this script, or XDG_CONFIG_HOME/claude if
+# that is set). This makes the Claude setup more aligned with the XDG Base
+# Directory Specification: not only is the configuration directory placed under
+# ~/.config rather than the home root, but the global settings file
+# ~/.claude.json is also relocated into that same directory instead of
+# cluttering the home root.
 #
 # If the system has not been recently upgraded, which is done automatically
 # during setup by the arch-setup (arch-setup-packages) script, to ensure you
@@ -98,15 +109,36 @@
 #
 
 # If we could always assume that the distro is always set up with a non-root
-# default user, then we couuld verify we are not not running as root, since
-# this considers a local Claude Code installation for the current user only!
+# default user, then we could verify we are not running as root, since this
+# considers a local Claude Code installation for the current user only!
 #if [ ${EUID:-$(id -u)} -eq 0 ]; then
 #    echo 'Please do not run this script as root' >&2
 #    exit 1
 #fi
 
-if [ -f "${HOME}/.local/bin/claude" ]; then
-    echo "There is an existing file '~/.local/bin/claude' so Claude Code is probably already installed!" >&2
+# Resolve XDG conventional user binary directory.
+# This is where the Claude executable is installed by default, and here we
+# assume it was not manually installed elsewhere.
+bin_dir="${HOME}/.local/bin"
+
+# Resolve Claude-specific configuration directory.
+# When CLAUDE_CONFIG_DIR is not already set, default to the XDG config home
+# location: XDG_CONFIG_HOME/claude if set, otherwise ~/.config/claude.
+# Claude does not natively consider XDG_CONFIG_HOME, so this script also
+# ensures CLAUDE_CONFIG_DIR is set in the shell profile so Claude uses this
+# location in all future sessions. Setting CLAUDE_CONFIG_DIR not only moves
+# the configuration directory from ~/.claude to the given location, but also
+# relocates the global settings file ~/.claude.json from the home directory
+# root into that same directory (as .claude.json within it). This makes the
+# Claude setup fully aligned with the XDG Base Directory Specification.
+if [ -n "${CLAUDE_CONFIG_DIR}" ]; then
+    config_dir="${CLAUDE_CONFIG_DIR}"
+else
+    config_dir="${XDG_CONFIG_HOME:-$HOME/.config}/claude"
+fi
+
+if [ -f "${bin_dir}/claude" ]; then
+    echo "There is an existing file '${bin_dir}/claude' so Claude Code is probably already installed!" >&2
     exit 1
 fi
 
@@ -177,19 +209,21 @@ if [ "$actual_checksum" != "$expected_checksum" ]; then
     exit 1
 fi
 echo "Installing..."
-if ! mkdir -p "${HOME}/.local/bin"; then
-    echo "Failed to create directory '~/.local/bin'" >&2
+if ! mkdir -p "${bin_dir}"; then
+    echo "Failed to create directory '${bin_dir}'" >&2
     rm --force "/tmp/claude-installer-${version}"
     exit 1
 fi
-if ! mv "/tmp/claude-installer-${version}" "${HOME}/.local/bin/claude"; then
-    echo "Failed to install new executable as '~/.local/bin/claude'" >&2
+if ! mv "/tmp/claude-installer-${version}" "${bin_dir}/claude"; then
+    echo "Failed to install new executable as '${bin_dir}/claude'" >&2
     rm --force "/tmp/claude-installer-${version}"
     exit 1
 fi
-chmod +x "${HOME}/.local/bin/claude"
+chmod +x "${bin_dir}/claude"
 
-# Write relevant settings to ~/.claude/settings.json:
+# Write relevant settings to the Claude configuration file (${config_dir}/settings.json,
+# by default in this script ~/.config/claude/settings.json, while the regular
+# Claude default is ~/.claude/settings.json):
 # - Enable sandbox, but with regular permissions mode (auto-allow is default).
 # - Disable all MCP servers.
 # - Disable auto-updater. Important to avoid the standalone setup being
@@ -232,7 +266,7 @@ chmod +x "${HOME}/.local/bin/claude"
 #         then have to reintroduce all others.
 echo
 echo "Creating initial Claude Code configuration..."
-settings_file="${HOME}/.claude/settings.json"
+settings_file="${config_dir}/settings.json"
 if [ ! -f "$settings_file" ] || [ -w "$settings_file" ]; then
     current=$([ -s "$settings_file" ] && cat "$settings_file")
     if [ -z "$current" ] || [ "$current" = "{}" ]; then
@@ -267,9 +301,6 @@ fi
 # Ensure the Claude executable is in PATH.
 # It is installed into ~/.local/bin, which is a commonly used directory for
 # user-specific executables, but on Arch Linux it is not in PATH by default.
-# If it is not in PATH, the claude installer will have already warned about this:
-#   Native installation exists but ~/.local/bin is not in your PATH. Run:
-#   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 echo "Ensuring the user-specific installed Claude Code executable is in PATH..."
 if [ ! -f "${HOME}/.bashrc" ]; then
     echo "WARNING: The user profile '~/.bashrc' does not exist so unable to add '~/.local/bin' to PATH automatically"
@@ -292,3 +323,33 @@ if command -v claude > /dev/null 2>&1; then
 else
     echo "NOTE: The command 'claude' is not available in this shell session"
 fi
+
+# Ensure Claude uses the XDG-based configuration directory.
+# Claude does not natively consider XDG_CONFIG_HOME, so it would otherwise
+# fall back to its built-in default directory ~/.claude for configuration
+# files and keep the global settings file ~/.claude.json in the home directory
+# root, ignoring the configuration written to the XDG-based location above.
+# By exporting CLAUDE_CONFIG_DIR, we both direct Claude to the correct
+# configuration directory and cause it to store .claude.json within that
+# directory rather than at the home directory root. Only necessary when
+# CLAUDE_CONFIG_DIR was not already set by the user (in which case we already
+# respect it and there is nothing to add).
+if [ -z "${CLAUDE_CONFIG_DIR}" ]; then
+    echo "Ensuring CLAUDE_CONFIG_DIR is set to '${config_dir}' so Claude uses the XDG-based configuration directory..."
+    if [ ! -f "${HOME}/.bashrc" ]; then
+        echo "WARNING: The user profile '~/.bashrc' does not exist so unable to set CLAUDE_CONFIG_DIR automatically"
+    elif grep --quiet --extended-regexp '^export CLAUDE_CONFIG_DIR=' "${HOME}/.bashrc"; then
+        echo "The user profile '~/.bashrc' already sets CLAUDE_CONFIG_DIR"
+    else
+        echo "Setting CLAUDE_CONFIG_DIR in user profile '~/.bashrc'"
+        echo "export CLAUDE_CONFIG_DIR=\"${config_dir}\"" >> "${HOME}/.bashrc"
+        echo "NOTE: This takes effect in new shell sessions only"
+    fi
+    if [ -n "${CLAUDE_CONFIG_DIR}" ]; then
+        echo "The current CLAUDE_CONFIG_DIR variable is already set to '${CLAUDE_CONFIG_DIR}'"
+    else
+        echo "The current CLAUDE_CONFIG_DIR variable is not set in this shell session"
+    fi
+fi
+
+unset bin_dir config_dir settings_file

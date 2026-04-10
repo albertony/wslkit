@@ -3,18 +3,25 @@
 # Uninstalls development environment for Claude Code for current user.
 #
 # This cleans up as much as possible from what the installation script does.
-# It cleans according known paths for a regular install, which also covers a
-# standalone install, although it does not use of all them. Assuming default
-# locations are used, i.e. well-known locations within the current user's home
-# directory, and that there is not set a custom location environment variable
-# CLAUDE_CONFIG_DIR. It can also be used for other setups, e.g. a strictly
-# official standard installation. It may be too invasive for some scenarios,
-# it's primary use case is for testing Claude Code installations etc.
+# It cleans up according to known paths for a regular install, which also
+# covers a standalone install, although it does not use all of them. It can
+# also be used for other setups, e.g. a strictly official standard
+# installation. It may be too invasive for some scenarios, its primary use
+# case is for testing Claude Code installations etc.
+#
+# This script considers default locations known to be used by Claude, and also
+# environment variables that Claude is known to check for custom locations.
+# The defaults are all within the current user's home directory. Claude
+# considers environment variable CLAUDE_CONFIG_DIR, falling back to ~/.claude
+# for main configuration. It does not consider XDG_CONFIG_HOME. For other
+# files, Claude adheres to the XDG standard, considering base directories from
+# environment variables XDG_DATA_HOME, XDG_STATE_HOME and XDG_CACHE_HOME,
+# falling back to ~/.local/share, ~/.local/state and ~/.cache respectively.
 #
 # Removes the application executables and the global/user configuration. Also
 # removes any remaining empty directories from the user home, assuming if they
 # are now empty it was Claude Code that created them. The directories
-# considered are commonly used Linux directories but does not exist by default
+# considered are commonly used Linux directories but do not exist by default
 # in plain Arch Linux filesystem, and Claude Code creates them during the
 # regular install procedure, or on first start, so should be safe and get us
 # most cleanly back to original state if we delete them.
@@ -23,9 +30,9 @@
 # their own .claude subdirectory with project-specific configuration files.
 # These are of course not cleaned up by this script. There is one exception:
 # If the home directory has been opened in Claude Code, then we may have gotten
-# an additional configuration file ~/.claude/settings.local.json for local
+# an additional configuration file ${config_dir}/settings.local.json for local
 # project settings of the home directory, in addition to the existing
-# ~/.claude/settings.json for user settings which overlaps with the shared
+# ${config_dir}/settings.json for user settings which overlaps with the shared
 # project settings for the home directory. We will delete both of these.
 #
 # Passes any script arguments to the pacman commands, so can execute script with
@@ -34,49 +41,78 @@
 #
 
 # If we could always assume that the distro is always set up with a non-root
-# default user, then we couuld verify we are not not running as root, since
-# this considers a local Claude Code installation for the current user only!
+# default user, then we could verify we are not running as root, since this
+# considers a local Claude Code installation for the current user only!
 #if [ ${EUID:-$(id -u)} -eq 0 ]; then
 #    echo 'Please do not run this script as root' >&2
 #    exit 1
 #fi
 
+# Resolve XDG conventional user binary directory.
+# This is where the Claude executable is installed by default, and here we
+# assume it was not manually installed elsewhere.
+bin_dir="${HOME}/.local/bin"
+
+# Resolve Claude-specific configuration directory and global settings file.
+# The config directory is ~/.claude by default, overridden by
+# CLAUDE_CONFIG_DIR. The global settings file is ~/.claude.json by default, but
+# stored as .claude.json inside the config directory when CLAUDE_CONFIG_DIR is
+# set. Claude does not consider XDG_CONFIG_HOME for either of these.
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+if [ -n "${CLAUDE_CONFIG_DIR}" ]; then
+    claude_json="${CLAUDE_CONFIG_DIR}/.claude.json"
+else
+    claude_json="${HOME}/.claude.json"
+fi
+
+# Resolve XDG standard base directories, falling back to XDG defaults.
+# Ignoring XDG_CONFIG_HOME as per comment above.
+data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
+cache_home="${XDG_CACHE_HOME:-$HOME/.cache}"
+
 # Remove application files.
 echo "Removing application files..."
-rm --force "${HOME}/.local/bin/claude" # In regular setup this is a symlink to the current version of the application executable, in standalone this is the actual executable
-rm --recursive --force "${HOME}/.local/share/claude" # In regular setup this contains multiples versions of the actual application executable
-rm --force "${HOME}/.local/share/applications/claude-code-url-handler.desktop"
+rm --force "${bin_dir}/claude" # In regular setup this is a symlink to the current version of the application executable, in standalone this is the actual executable
+rm --recursive --force "${data_home}/claude" # In regular setup this contains multiple versions of the actual application executable
+rm --force "${data_home}/applications/claude-code-url-handler.desktop"
 
 # Remove data files.
 echo "Removing data files..."
-rm --force "${HOME}/.claude.json" # Remove user preferences, OAuth session, state etc.
-rm --recursive --force "${HOME}/.claude" # Remove default CLAUDE_CONFIG_DIR, with user settings, backups, downloads, cache
-rm --recursive --force "${HOME}/.local/state/claude" # Locks
-rm --recursive --force "${HOME}/.cache/claude" # Cache
-rm --recursive --force "${HOME}/.cache/claude-cli-nodejs" # Cache
+rm --force "${claude_json}" # Remove global settings, with user preferences, OAuth session, state etc.
+rm --recursive --force "${config_dir}" # Remove CLAUDE_CONFIG_DIR, with user settings, backups, downloads, cache
+rm --recursive --force "${state_home}/claude" # Locks
+rm --recursive --force "${cache_home}/claude" # Cache
+rm --recursive --force "${cache_home}/claude-cli-nodejs" # Cache
 
 # Cleanup remaining empty directories.
 echo "Cleaning up remaining empty directories..."
-find "${HOME}/.local" -type d -empty -delete 2> /dev/null
-find "${HOME}/.cache" -type d -empty -delete 2> /dev/null
-# Alternative, pinpointing known subdirectories:
-#rmdir "${HOME}/.local/bin" 2> /dev/null
-#rmdir "${HOME}/.local/share" 2> /dev/null
-#rmdir "${HOME}/.local/state" 2> /dev/null
-#rmdir "${HOME}/.local" 2> /dev/null
-#rmdir "${HOME}/.cache/claude-cli-nodejs" 2> /dev/null
-#rmdir "${HOME}/.cache" 2> /dev/null
+find "${bin_dir}" -type d -empty -delete 2> /dev/null
+find "${data_home}" -type d -empty -delete 2> /dev/null
+find "${state_home}" -type d -empty -delete 2> /dev/null
+find "${cache_home}" -type d -empty -delete 2> /dev/null
+rmdir "${HOME}/.local" 2> /dev/null # Remove parent if now empty (not XDG-governed)
 
 echo "Cleaning up PATH variable..."
-if [ ! -d "${HOME}/.local/bin" ] && [ -f "${HOME}/.bashrc" ]; then
+if [ ! -d "${bin_dir}" ] && [ -f "${HOME}/.bashrc" ]; then
     if grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
         sed --in-place '/^export PATH="\${HOME}\/\.local\/bin:\${PATH}"$/d' "${HOME}/.bashrc"
         echo "Removed from '~/.bashrc' the entry that added the now-removed '~/.local/bin' to PATH"
     fi
 fi
 
+echo "Cleaning up CLAUDE_CONFIG_DIR variable..."
+if [ -f "${HOME}/.bashrc" ]; then
+    if grep --quiet --extended-regexp '^export CLAUDE_CONFIG_DIR=' "${HOME}/.bashrc"; then
+        sed --in-place '/^export CLAUDE_CONFIG_DIR=.*$/d' "${HOME}/.bashrc"
+        echo "Removed from '~/.bashrc' the entry that set CLAUDE_CONFIG_DIR"
+    fi
+fi
+
 # Claude may also create or update the global gitignore for the user, to ignore
 # local (personal) project settings files, matching '**/.claude/settings.local.json'.
+# Note that it does not consider XDG_CONFIG_HOME for this either, so it is always
+# referring to file ~/.config/git/ignore.
 echo "Cleaning up global git ignore..."
 if [ -f "${HOME}/.config/git/ignore" ]; then
     if grep --quiet '^\*\*/\.claude/settings\.local\.json$' "${HOME}/.config/git/ignore"; then
@@ -94,7 +130,7 @@ if [ -f "${HOME}/.config/git/ignore" ]; then
     fi
 fi
 
-# This install script installs packages for the optional dependencies socat
+# The install script installs packages for the optional dependencies socat
 # and bubblewrap, so for a clean uninstall we should remove them. But it may
 # be a bit risky, as they could have been already installed when we installed
 # Claude, and also others may now depend on them! However, unless this script
@@ -119,3 +155,5 @@ if ! sudo pacman --sync --clean "$@"; then
     echo "Failed!" >&2
     exit 1
 fi
+
+unset bin_dir config_dir claude_json data_home state_home cache_home

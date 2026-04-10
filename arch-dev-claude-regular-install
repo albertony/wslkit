@@ -25,17 +25,18 @@
 # specific version of the executables in directory
 # ~/.local/share/claude/versions, a strategy used by the Claude built-in
 # updater functionality. Finally, this script creates a curated initial
-# configuration in current user's ~/.claude/settings.json. This enables the
-# sandbox mode with regular permissions (not auto-allow) by default. It also
-# disables all MCP servers so that user later must explicitly allow any to be
-# used and disables automatic addition of the official plugin marketplace on
-# first run so that user can decide later if it should be added manually. Also
-# disables telemetry, error reporting, feedback prompts and dynamic updating of
-# terminal title based on conversation context. In addition it disables the
-# built-in auto-updater! This is a bigger decision than the above, but for a
-# consistent environment and minimal network traffic it may make sense to
-# handle updates manually. It can easily be done at any time with command
-# 'claude update', or with a separate script arch-dev-claude-regular-upgrade.
+# configuration in current user's Claude configuration file (settings.json).
+# This enables the sandbox mode with regular permissions (not auto-allow) by
+# default. It also disables all MCP servers so that user later must explicitly
+# allow any to be used and disables automatic addition of the official plugin
+# marketplace on first run so that user can decide later if it should be added
+# manually. Also disables telemetry, error reporting, feedback prompts and
+# dynamic updating of terminal title based on conversation context. In addition
+# it disables the built-in auto-updater! This is a bigger decision than the
+# above, but for a consistent environment and minimal network traffic it may
+# make sense to handle updates manually. It can easily be done at any time with
+# command 'claude update', or with a separate script
+# arch-dev-claude-regular-upgrade.
 #
 # If the system has not been recently upgraded, which is done automatically
 # during setup by the arch-setup (arch-setup-packages) script, to ensure you
@@ -61,16 +62,25 @@
 #
 
 # If we could always assume that the distro is always set up with a non-root
-# default user, then we couuld verify we are not not running as root, since
-# this considers a local Claude Code installation for the current user only!
+# default user, then we could verify we are not running as root, since this
+# considers a local Claude Code installation for the current user only!
 #if [ ${EUID:-$(id -u)} -eq 0 ]; then
 #    echo 'Please do not run this script as root' >&2
 #    exit 1
 #fi
 
+# Resolve XDG conventional user binary directory.
+# This is where the Claude executable is installed by default, and here we
+# assume it was not manually installed elsewhere.
+bin_dir="${HOME}/.local/bin"
 
-if [ -f "${HOME}/.local/bin/claude" ]; then
-    echo "There is an existing file '~/.local/bin/claude' so Claude Code is probably already installed!" >&2
+# Resolve Claude-specific configuration directory.
+# It is ~/.claude by default, and can be overridden by variable
+# CLAUDE_CONFIG_DIR, but Claude does not consider XDG_CONFIG_HOME.
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+
+if [ -f "${bin_dir}/claude" ]; then
+    echo "There is an existing file '${bin_dir}/claude' so Claude Code is probably already installed!" >&2
     exit 1
 fi
 
@@ -111,7 +121,7 @@ fi
 # - Run the downloaded application executable with argument "install", to
 #   perform the built-in installation procedure. This installs the executable
 #   into ~/.local/share/claude/versions, creates symlink ~/.local/bin/claude,
-#   and creates  directory structure in home (~/.claude.json, ~/.claude/,
+#   and creates directory structure in home (~/.claude.json, ~/.claude/,
 #   ~/.cache/, ~/.local/ etc). Without arguments, this installs the latest
 #   version, but can also specify "latest", "stable" or a specific version.
 #   Note that this actually downloads the application executable it installs,
@@ -180,7 +190,8 @@ if ! "/tmp/claude-installer-${version}" install; then
 fi
 rm --force "/tmp/claude-installer-${version}"
 
-# Write relevant settings to ~/.claude/settings.json:
+# Write relevant settings to the Claude configuration file (${config_dir}/settings.json,
+# by default ~/.claude/settings.json):
 # - Enable sandbox, but with regular permissions mode (auto-allow is default).
 # - Disable all MCP servers.
 # - Skip automatic addition of the official plugin marketplace on first run.
@@ -226,7 +237,7 @@ rm --force "/tmp/claude-installer-${version}"
 #         then have to reintroduce all others.
 echo
 echo "Creating initial Claude Code configuration..."
-settings_file="${HOME}/.claude/settings.json"
+settings_file="${config_dir}/settings.json"
 if [ ! -f "$settings_file" ] || [ -w "$settings_file" ]; then
     current=$([ -s "$settings_file" ] && cat "$settings_file")
     if [ -z "$current" ] || [ "$current" = "{}" ]; then
@@ -286,3 +297,5 @@ if command -v claude > /dev/null 2>&1; then
 else
     echo "NOTE: The command 'claude' is not available in this shell session"
 fi
+
+unset bin_dir config_dir settings_file

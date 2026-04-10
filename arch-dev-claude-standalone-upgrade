@@ -11,12 +11,13 @@
 # that if the built-in update functionality is used, either the auto-updater
 # or the 'claude update' command, it will migrate to the regular setup!
 # So to keep this standalone setup, update must be done manually by downloading
-# and replacing the binary, like this script does! To migrate back from
-# regular setup to standalone setup the following command should work:
+# and replacing the binary, like this script does! To migrate back to
+# standalone setup when default paths are used, the following command should
+# work:
 #   mv "$(readlink ~/.local/bin/claude)" ~/.local/bin/claude && rm -rf ~/.local/share/claude/versions
 #
 # This script can be run with argument --dry-run or -n to only check versions,
-# but not update, and not prompt user to ask if an update should be preformed.
+# but not update, and not prompt user to ask if an update should be performed.
 # For completeness with other scripts this script can be executed with argument
 # --noconfirm to run non-interactively proceeding without prompting user. This
 # means if there is an update available, it will be installed.
@@ -26,12 +27,22 @@
 #
 
 # If we could always assume that the distro is always set up with a non-root
-# default user, then we couuld verify we are not not running as root, since
-# this considers a local Claude Code installation for the current user only!
+# default user, then we could verify we are not running as root, since this
+# considers a local Claude Code installation for the current user only!
 #if [ ${EUID:-$(id -u)} -eq 0 ]; then
 #    echo 'Please do not run this script as root' >&2
 #    exit 1
 #fi
+
+# Resolve XDG conventional user binary directory.
+# This is where the Claude executable is installed by default, and here we
+# assume it was not manually installed elsewhere.
+bin_dir="${HOME}/.local/bin"
+
+# Resolve Claude-specific configuration directory.
+# It is ~/.claude by default, and can be overridden by variable
+# CLAUDE_CONFIG_DIR, but Claude does not consider XDG_CONFIG_HOME.
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
 echo "Finding existing version..."
 existing_path=$(command -v claude 2> /dev/null)
@@ -39,12 +50,12 @@ if [ -z "$existing_path" ]; then
     echo "The command 'claude' is not available in this shell session" >&2
     exit 1
 fi
-if [ "$existing_path" != "${HOME}/.local/bin/claude" ]; then
-    echo "The command 'claude' is at path ${existing_path} instead of the expected '~/.local/bin/claude'" >&2
+if [ "$existing_path" != "${bin_dir}/claude" ]; then
+    echo "The command 'claude' is at path ${existing_path} instead of the expected '${bin_dir}/claude'" >&2
     exit 1
 fi
-if [ -L "${HOME}/.local/bin/claude" ]; then
-    echo "The path '~/.local/bin/claude' is a symbolic link so this looks like a regular and not standalone setup" >&2
+if [ -L "${bin_dir}/claude" ]; then
+    echo "The path '${bin_dir}/claude' is a symbolic link so this looks like a regular and not standalone setup" >&2
     exit 1
 fi
 existing_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
@@ -120,17 +131,17 @@ if [ "$latest_version" != "$existing_version" ]; then
         exit 1
     fi
     echo "Installing..."
-    if ! mkdir -p "${HOME}/.local/bin"; then
-        echo "Failed to create directory '~/.local/bin'" >&2
+    if ! mkdir -p "${bin_dir}"; then
+        echo "Failed to create directory '${bin_dir}'" >&2
         rm --force "/tmp/claude-installer-${latest_version}"
         exit 1
     fi
-    if ! mv "/tmp/claude-installer-${latest_version}" "${HOME}/.local/bin/claude"; then
-        echo "Failed to install new executable as '~/.local/bin/claude'" >&2
+    if ! mv "/tmp/claude-installer-${latest_version}" "${bin_dir}/claude"; then
+        echo "Failed to install new executable as '${bin_dir}/claude'" >&2
         rm --force "/tmp/claude-installer-${latest_version}"
         exit 1
     fi
-    chmod +x "${HOME}/.local/bin/claude"
+    chmod +x "${bin_dir}/claude"
     new_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
     if [ -z "$new_version" ]; then
         echo "Failed to find new version from output of command 'claude'" >&2
@@ -155,7 +166,7 @@ fi
 # process with the given PID. Here we assume no such obscure setups are used,
 # and therefore performs our own cleaning based on running processes in WSL!
 #echo "Cleaning up stale session PID files..."
-for pid_file in "${HOME}/.claude/sessions/"*.json; do
+for pid_file in "${config_dir}/sessions/"*.json; do
     if [ -e "$pid_file" ]; then
         pid=$(basename "$pid_file" .json)
         if echo "$pid" | grep --quiet '^[0-9][0-9]*$'; then
@@ -166,3 +177,5 @@ for pid_file in "${HOME}/.claude/sessions/"*.json; do
         fi
     fi
 done
+
+unset bin_dir config_dir

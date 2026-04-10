@@ -44,12 +44,22 @@
 #
 
 # If we could always assume that the distro is always set up with a non-root
-# default user, then we couuld verify we are not not running as root, since
-# this considers a local Claude Code installation for the current user only!
+# default user, then we could verify we are not running as root, since this
+# considers a local Claude Code installation for the current user only!
 #if [ ${EUID:-$(id -u)} -eq 0 ]; then
 #    echo 'Please do not run this script as root' >&2
 #    exit 1
 #fi
+
+# Resolve XDG conventional user binary directory.
+# This is where the Claude executable is installed by default, and here we
+# assume it was not manually installed elsewhere.
+bin_dir="${HOME}/.local/bin"
+
+# Resolve Claude-specific configuration directory.
+# It is ~/.claude by default, and can be overridden by variable
+# CLAUDE_CONFIG_DIR, but Claude does not consider XDG_CONFIG_HOME.
+config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
 echo "Finding existing version..."
 existing_path=$(command -v claude 2> /dev/null)
@@ -57,12 +67,12 @@ if [ -z "$existing_path" ]; then
     echo "The command 'claude' is not available in this shell session" >&2
     exit 1
 fi
-if [ "$existing_path" != "${HOME}/.local/bin/claude" ]; then
-    echo "The command 'claude' is at path ${existing_path} instead of the expected '~/.local/bin/claude'" >&2
+if [ "$existing_path" != "${bin_dir}/claude" ]; then
+    echo "The command 'claude' is at path ${existing_path} instead of the expected '${bin_dir}/claude'" >&2
     exit 1
 fi
-if [ ! -L "${HOME}/.local/bin/claude" ]; then
-    echo "The path '~/.local/bin/claude' is not a symbolic link so this looks like a standalone and not regular setup" >&2
+if [ ! -L "${bin_dir}/claude" ]; then
+    echo "The path '${bin_dir}/claude' is not a symbolic link so this looks like a standalone and not regular setup" >&2
     exit 1
 fi
 existing_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
@@ -138,7 +148,7 @@ fi
 # process with the given PID. Here we assume no such obscure setups are used,
 # and therefore performs our own cleaning based on running processes in WSL!
 #echo "Cleaning up stale session PID files..."
-for pid_file in "${HOME}/.claude/sessions/"*.json; do
+for pid_file in "${config_dir}/sessions/"*.json; do
     if [ -e "$pid_file" ]; then
         pid=$(basename "$pid_file" .json)
         if echo "$pid" | grep --quiet '^[0-9][0-9]*$'; then
@@ -149,3 +159,5 @@ for pid_file in "${HOME}/.claude/sessions/"*.json; do
         fi
     fi
 done
+
+unset bin_dir config_dir
