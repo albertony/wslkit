@@ -49,6 +49,18 @@ param (
 	# Parameter -CreateUser is implied.
 	[pscredential] $User,
 
+	# Optional custom user id when creating regular user.
+	# If not specified it will in reality always be 1000. Actually it will be
+	# assigned automatically by the useradd command that are used, within the
+	# range configured in /etc/login.defs, currently by default starting with
+	# 1000 and ending with 60000 for normal users. Since we are creating the
+	# first and currently only normal user in the distro, it will get 1000.
+	# WSL does not support multiple running distributions using systemd where
+	# the active user share the same UID. It is therefore recommended to create
+	# default users with distinct UID fo each WSL distribution!
+	# (See: https://wiki.archlinux.org/title/Install_Arch_Linux_on_WSL)
+	[uint32] $UserId,
+
 	# Install from an already downloaded distribution image.
 	# The argument is assumed to be the path to an official Arch Linux installer file, e.g.
 	# "archlinux-2026.03.01.160197.wsl", but it will be imported regardless, so can in theory also be the plain
@@ -136,6 +148,31 @@ if (($CreateUser -or $User) -and ($Force -or $PSCmdlet.ShouldProcess("$(if($User
 			}
 		}
 	} while (-not $User)
+}
+
+if ((Get-ChildItem -LiteralPath HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss).Count -gt 0) {
+	if ($User) {
+		if (-not $UserId) {
+			if (-not $Force -and -not $PSCmdlet.ShouldContinue("There are already other WSL distributions installed.
+WSL does not support multiple running distributions using systemd where
+the active user share the same User ID. It is therefore recommended to
+create default users with distinct User ID to each WSL distribution!
+Are you sure you want to create this WSL distribution with a user that
+gets automatically assigned an User ID which will typically always be 1000?", "Create user")) {
+				throw "Aborted"
+			}
+		}
+	}
+	else {
+		if (-not $Force -and -not $PSCmdlet.ShouldContinue("There are already other WSL distributions installed.
+WSL does not support multiple running distributions using systemd where
+the active user share the same User ID. It is therefore recommended to
+create default users with distinct User ID to each WSL distribution!
+Are you sure you want to create this WSL distribution without a user,
+which means you will only have the root user with fixed User ID 0?", "Create user")) {
+			throw "Aborted"
+		}
+	}
 }
 
 if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(Default destination)'}), "Create Arch Linux WSL distribution '${Name}'")) {
@@ -237,7 +274,12 @@ if ($Force -or $PSCmdlet.ShouldProcess($(if($Destination){$Destination}else{'(De
 	# Create additional (non-root) user and set it as the default user.
 	if ($User) {
 		Write-Host "Creating user `"$($User.UserName)`"..."
-		wsl.exe --distribution $Name --exec useradd --create-home --groups wheel $User.UserName # On Arch useradd is a native binary so can use --exec and no need to go through a shell
+		if ($UserId) {
+			wsl.exe --distribution $Name --exec useradd --uid $UserId --create-home --groups wheel $User.UserName # On Arch useradd is a native binary so can use --exec and no need to go through a shell
+		}
+		else {
+			wsl.exe --distribution $Name --exec useradd --create-home --groups wheel $User.UserName # On Arch useradd is a native binary so can use --exec and no need to go through a shell
+		}
 		if ($LastExitCode -ne 0) {
 			throw "WSL command failed (error code ${LastExitCode})"
 		}
