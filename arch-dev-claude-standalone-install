@@ -324,32 +324,33 @@ else
     echo "NOTE: The command 'claude' is not available in this shell session"
 fi
 
-# Ensure Claude uses the XDG-based configuration directory.
+# Ensure Claude uses the configured configuration directory in future sessions.
 # Claude does not natively consider XDG_CONFIG_HOME, so it would otherwise
 # fall back to its built-in default directory ~/.claude for configuration
 # files and keep the global settings file ~/.claude.json in the home directory
-# root, ignoring the configuration written to the XDG-based location above.
-# By exporting CLAUDE_CONFIG_DIR, we both direct Claude to the correct
-# configuration directory and cause it to store .claude.json within that
-# directory rather than at the home directory root. Only necessary when
-# CLAUDE_CONFIG_DIR was not already set by the user (in which case we already
-# respect it and there is nothing to add).
-if [ -z "${CLAUDE_CONFIG_DIR}" ]; then
-    echo "Ensuring CLAUDE_CONFIG_DIR is set to '${config_dir}' so Claude uses the XDG-based configuration directory..."
-    if [ ! -f "${HOME}/.bashrc" ]; then
-        echo "WARNING: The user profile '~/.bashrc' does not exist so unable to set CLAUDE_CONFIG_DIR automatically"
-    elif grep --quiet --extended-regexp '^export CLAUDE_CONFIG_DIR=' "${HOME}/.bashrc"; then
-        echo "The user profile '~/.bashrc' already sets CLAUDE_CONFIG_DIR"
-    else
-        echo "Setting CLAUDE_CONFIG_DIR in user profile '~/.bashrc'"
-        echo "export CLAUDE_CONFIG_DIR=\"${config_dir}\"" >> "${HOME}/.bashrc"
-        echo "NOTE: This takes effect in new shell sessions only"
-    fi
+# root, ignoring the configuration written to the configured location above.
+# By exporting CLAUDE_CONFIG_DIR in the shell profile, we both direct Claude
+# to the correct configuration directory and cause it to store .claude.json
+# within that directory rather than at the home directory root. If
+# CLAUDE_CONFIG_DIR is already set in the current session but not yet in the
+# shell profile, it will still be added and a warning is issued.
+echo "Ensuring CLAUDE_CONFIG_DIR is set to '${config_dir}' in shell profile for future sessions..."
+if [ ! -f "${HOME}/.bashrc" ]; then
+    echo "WARNING: The user profile '~/.bashrc' does not exist so unable to set CLAUDE_CONFIG_DIR automatically"
+elif grep --quiet --extended-regexp '^export CLAUDE_CONFIG_DIR=' "${HOME}/.bashrc"; then
+    echo "The user profile '~/.bashrc' already sets CLAUDE_CONFIG_DIR"
+else
     if [ -n "${CLAUDE_CONFIG_DIR}" ]; then
-        echo "The current CLAUDE_CONFIG_DIR variable is already set to '${CLAUDE_CONFIG_DIR}'"
-    else
-        echo "The current CLAUDE_CONFIG_DIR variable is not set in this shell session"
+        echo "WARNING: CLAUDE_CONFIG_DIR is set in the current session but not in '~/.bashrc'"
     fi
+    echo "Setting CLAUDE_CONFIG_DIR in user profile '~/.bashrc'"
+    echo "export CLAUDE_CONFIG_DIR=\"${config_dir}\"" >> "${HOME}/.bashrc"
+    echo "NOTE: This takes effect in new shell sessions only"
+fi
+if [ -n "${CLAUDE_CONFIG_DIR}" ]; then
+    echo "The current CLAUDE_CONFIG_DIR variable is set to '${CLAUDE_CONFIG_DIR}' in this shell session"
+else
+    echo "The current CLAUDE_CONFIG_DIR variable is not set in this shell session"
 fi
 
 unset bin_dir config_dir settings_file

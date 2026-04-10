@@ -80,7 +80,7 @@ rm --force "${data_home}/applications/claude-code-url-handler.desktop"
 # Remove data files.
 echo "Removing data files..."
 rm --force "${claude_json}" # Remove global settings, with user preferences, OAuth session, state etc.
-rm --recursive --force "${config_dir}" # Remove CLAUDE_CONFIG_DIR, with user settings, backups, downloads, cache
+rm --recursive --force "${config_dir}" # Remove configuration directory, with user settings, backups, downloads, cache
 rm --recursive --force "${state_home}/claude" # Locks
 rm --recursive --force "${cache_home}/claude" # Cache
 rm --recursive --force "${cache_home}/claude-cli-nodejs" # Cache
