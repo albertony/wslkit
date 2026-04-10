@@ -53,11 +53,12 @@
 # assume it was not manually installed elsewhere.
 bin_dir="${HOME}/.local/bin"
 
-# Resolve Claude-specific configuration directory and global settings file.
-# The config directory is ~/.claude by default, overridden by
-# CLAUDE_CONFIG_DIR. The global settings file is ~/.claude.json by default, but
-# stored as .claude.json inside the config directory when CLAUDE_CONFIG_DIR is
-# set. Claude does not consider XDG_CONFIG_HOME for either of these.
+# Resolve Claude-specific configuration directory and global configuration
+# file. The config directory is ~/.claude by default, overridden by
+# CLAUDE_CONFIG_DIR. The global configuration file is ~/.claude.json by
+# default, but stored as .claude.json inside the config directory when
+# CLAUDE_CONFIG_DIR is set. Claude does not consider XDG_CONFIG_HOME for
+# either of these.
 config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 if [ -n "${CLAUDE_CONFIG_DIR}" ]; then
     claude_json="${CLAUDE_CONFIG_DIR}/.claude.json"
@@ -73,17 +74,23 @@ cache_home="${XDG_CACHE_HOME:-$HOME/.cache}"
 
 # Remove application files.
 echo "Removing application files..."
+echo "Considering binary directory '${bin_dir}'"
+echo "Considering data directory '${data_home}'"
 rm --force "${bin_dir}/claude" # In regular setup this is a symlink to the current version of the application executable, in standalone this is the actual executable
 rm --recursive --force "${data_home}/claude" # In regular setup this contains multiple versions of the actual application executable
 rm --force "${data_home}/applications/claude-code-url-handler.desktop"
 
 # Remove data files.
 echo "Removing data files..."
+echo "Considering global configuration file '${claude_json}'"
+echo "Considering configuration directory '${config_dir}'"
+echo "Considering cache directory '${cache_home}'"
+echo "Considering state directory '${state_home}'"
 rm --force "${claude_json}" # Remove global settings, with user preferences, OAuth session, state etc.
 rm --recursive --force "${config_dir}" # Remove configuration directory, with user settings, backups, downloads, cache
-rm --recursive --force "${state_home}/claude" # Locks
 rm --recursive --force "${cache_home}/claude" # Cache
 rm --recursive --force "${cache_home}/claude-cli-nodejs" # Cache
+rm --recursive --force "${state_home}/claude" # Locks
 
 # Cleanup remaining empty directories.
 echo "Cleaning up remaining empty directories..."
@@ -91,13 +98,15 @@ find "${bin_dir}" -type d -empty -delete 2> /dev/null
 find "${data_home}" -type d -empty -delete 2> /dev/null
 find "${state_home}" -type d -empty -delete 2> /dev/null
 find "${cache_home}" -type d -empty -delete 2> /dev/null
-rmdir "${HOME}/.local" 2> /dev/null # Remove parent if now empty (not XDG-governed)
+rmdir "${HOME}/.config" 2> /dev/null # Remove parent of default config dir if now empty (not XDG-governed)
+rmdir "${HOME}/.local" 2> /dev/null # Remove parent of default bin, data and state dir if now empty (not XDG-governed)
 
 echo "Cleaning up PATH variable..."
 if [ ! -d "${bin_dir}" ] && [ -f "${HOME}/.bashrc" ]; then
     if grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
         sed --in-place '/^export PATH="\${HOME}\/\.local\/bin:\${PATH}"$/d' "${HOME}/.bashrc"
-        echo "Removed from '~/.bashrc' the entry that added the now-removed '~/.local/bin' to PATH"
+        echo "Removed from user profile '.bashrc' the entry that added the now-removed '${bin_dir}' to PATH"
+        echo "NOTE: You should restart the shell session to refresh the environment variables"
     fi
 fi
 
@@ -105,7 +114,8 @@ echo "Cleaning up CLAUDE_CONFIG_DIR variable..."
 if [ -f "${HOME}/.bashrc" ]; then
     if grep --quiet --extended-regexp '^export CLAUDE_CONFIG_DIR=' "${HOME}/.bashrc"; then
         sed --in-place '/^export CLAUDE_CONFIG_DIR=.*$/d' "${HOME}/.bashrc"
-        echo "Removed from '~/.bashrc' the entry that set CLAUDE_CONFIG_DIR"
+        echo "Removed from user profile '.bashrc' the entry that set CLAUDE_CONFIG_DIR"
+        echo "NOTE: You should restart the shell session to refresh the environment variables"
     fi
 fi
 
@@ -117,43 +127,54 @@ echo "Cleaning up global git ignore..."
 if [ -f "${HOME}/.config/git/ignore" ]; then
     if grep --quiet '^\*\*/\.claude/settings\.local\.json$' "${HOME}/.config/git/ignore"; then
         sed --in-place '/^\*\*\/\.claude\/settings\.local\.json$/d' "${HOME}/.config/git/ignore"
-        echo "Removed line '**/.claude/settings.local.json' from file '~/.config/git/ignore'"
+        echo "Removed line '**/.claude/settings.local.json' from file '${HOME}/.config/git/ignore'"
         if [ ! -s "${HOME}/.config/git/ignore" ]; then
-            echo "The file '~/.config/git/ignore' is now empty so deleting it"
+            echo "The file is now empty so deleting it"
             rm "${HOME}/.config/git/ignore"
             rmdir "${HOME}/.config/git" 2> /dev/null
             rmdir "${HOME}/.config" 2> /dev/null
         fi
     fi
     if [ -f "${HOME}/.config/git/ignore" ] && grep --quiet '/\.claude/' "${HOME}/.config/git/ignore"; then
-        echo "WARNING: The global git ignore file '~/.config/git/ignore' still contains a path containing '/.claude/' which must be cleaned up manually"
+        echo "WARNING: The file '${HOME}/.config/git/ignore' still contains a path containing '/.claude/' which must be cleaned up manually"
     fi
 fi
 
-# The install script installs packages for the optional dependencies socat
-# and bubblewrap, so for a clean uninstall we should remove them. But it may
-# be a bit risky, as they could have been already installed when we installed
-# Claude, and also others may now depend on them! However, unless this script
-# is executed with argument --noconfirm, the user will be prompted for
-# confirmation.
-echo "Removing packages..."
-if ! sudo pacman --remove --nosave --recursive "$@" socat bubblewrap; then
-    echo "WARNING: Could not remove socat/bubblewrap — they may already be uninstalled or required by another package"
+echo "Checking dependencies..."
+# Sandboxed mode requires additional dependencies.
+# Currently we just check for them, to keep the install script user-specific,
+# and avoid requiring sudo.
+if pacman -Qi socat > /dev/null 2>&1; then
+    echo "WARNING: The package socat can now be removed if it was installed just to support Claude sandboxed mode"
 fi
-
-#
-# Clean the package database (cache).
-# Removing packages that are no longer installed to free up disk space,
-# assuming we removed either socat or bubblewrap or both above, these can be
-# removed from cache at least.
-# This will interactively prompt for confirmation before proceeding, unless
-# --noconfirm is also added.
-#
-echo
-echo "Cleanup package cache..."
-if ! sudo pacman --sync --clean "$@"; then
-    echo "Failed!" >&2
-    exit 1
+if pacman -Qi bubblewrap > /dev/null 2>&1; then
+    echo "WARNING: The package bubblewrap can now be removed if it was installed just to support Claude sandboxed mode"
 fi
+# OLD:
+## The install script installs packages for the optional dependencies socat
+## and bubblewrap, so for a clean uninstall we should remove them. But it may
+## be a bit risky, as they could have been already installed when we installed
+## Claude, and also others may now depend on them! However, unless this script
+## is executed with argument --noconfirm, the user will be prompted for
+## confirmation.
+#echo "Removing packages..."
+#if ! sudo pacman --remove --nosave --recursive "$@" socat bubblewrap; then
+#    echo "WARNING: Could not remove socat/bubblewrap — they may already be uninstalled or required by another package"
+#fi
+#
+##
+## Clean the package database (cache).
+## Removing packages that are no longer installed to free up disk space,
+## assuming we removed either socat or bubblewrap or both above, these can be
+## removed from cache at least.
+## This will interactively prompt for confirmation before proceeding, unless
+## --noconfirm is also added.
+##
+#echo
+#echo "Cleanup package cache..."
+#if ! sudo pacman --sync --clean "$@"; then
+#    echo "Failed!" >&2
+#    exit 1
+#fi
 
 unset bin_dir config_dir claude_json data_home state_home cache_home

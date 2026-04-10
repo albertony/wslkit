@@ -9,6 +9,11 @@
 # mode, and with curated initial configuration for privacy and minimized
 # unnecessary network traffic.
 #
+# Note that the sandboxed mode requires two (otherwise optional) dependencies
+# socat and bubblewrap. If these are not installed, this script will just
+# report a warning, and Claude will automatically disable sandboxing until
+# they are installed.
+#
 # This is a variant which creates a regular setup, corresponding to the setup
 # created by the official installation script https://claude.ai/install.sh
 # (but with some additional steps, described below). It relies on the Claude
@@ -18,24 +23,22 @@
 # to the current (latest) version. The standard auto-updater or 'claude update'
 # command can be used to upgrade to newer versions.
 #
-# This installs packages for the optional dependencies socat and bubblewrap,
-# required for the sandboxing mode. Then runs the 'claude install' command,
-# which performs a standard user-specific local install. The executable is
-# then available at path ~/.local/bin/claude, which is a symlink into a
-# specific version of the executables in directory
-# ~/.local/share/claude/versions, a strategy used by the Claude built-in
-# updater functionality. Finally, this script creates a curated initial
-# configuration in current user's Claude configuration file (settings.json).
-# This enables the sandbox mode with regular permissions (not auto-allow) by
-# default. It also disables all MCP servers so that user later must explicitly
-# allow any to be used and disables automatic addition of the official plugin
-# marketplace on first run so that user can decide later if it should be added
-# manually. Also disables telemetry, error reporting, feedback prompts and
-# dynamic updating of terminal title based on conversation context. In addition
-# it disables the built-in auto-updater! This is a bigger decision than the
-# above, but for a consistent environment and minimal network traffic it may
-# make sense to handle updates manually. It can easily be done at any time with
-# command 'claude update', or with a separate script
+# Then runs the 'claude install' command, which performs a standard
+# user-specific local install. The executable is then available at path
+# ~/.local/bin/claude, which is a symlink into a specific version of the
+# executables in directory ~/.local/share/claude/versions, a strategy used by
+# the Claude built-in updater functionality. Finally, this script creates a
+# curated initial configuration in current user's Claude configuration file
+# (settings.json). This enables the sandbox mode with regular permissions (not
+# auto-allow) by default. It also disables all MCP servers so that user later
+# must explicitly allow any to be used and disables automatic addition of the
+# official plugin marketplace on first run so that user can decide later if it
+# should be added manually. Also disables telemetry, error reporting, feedback
+# prompts and dynamic updating of terminal title based on conversation context.
+# In addition it disables the built-in auto-updater! This is a bigger decision
+# than the above, but for a consistent environment and minimal network traffic
+# it may make sense to handle updates manually. It can easily be done at any
+# time with command 'claude update', or with a separate script
 # arch-dev-claude-regular-upgrade.
 #
 # If the system has not been recently upgraded, which is done automatically
@@ -89,11 +92,19 @@ if command -v claude > /dev/null 2>&1; then
     exit 1
 fi
 
-echo "Making sure optional dependencies socat and bubblewrap are installed..."
-if ! sudo pacman --sync --needed "$@" socat bubblewrap; then
-    echo "Failed!" >&2
-    exit 1
+# We do configure sandbox mode below, but it will simply be ignored if not
+# dependencies are installed.
+# Currently we just check for them, to keep the install script user-specific,
+# and avoid requiring sudo.
+if ! pacman -Qi socat bubblewrap > /dev/null 2>&1; then
+    echo "WARNING: Missing dependencies socat or bubblewrap required for sandboxed mode"
 fi
+#OLD:
+#echo "Making sure optional dependencies socat and bubblewrap are installed..."
+#if ! sudo pacman --sync --needed "$@" socat bubblewrap; then
+#    echo "Failed!" >&2
+#    exit 1
+#fi
 
 # Install Claude Code using its built in installer, user-specific into home.
 # Alternative 1: Using the official install script.
@@ -128,7 +139,7 @@ fi
 #   and when this is the latest version it is exactly the same as the one we
 #   have already downloaded and are running the install with! That is 200 MiB
 #   wasted download!
-echo
+#echo
 echo "Installing Claude Code application..."
 base_url=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases
 version=$(curl --fail --silent --show-error --location "${base_url}/latest")

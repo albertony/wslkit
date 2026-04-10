@@ -33,6 +33,7 @@
 #   aspnet  .NET SDK, ASP.NET Core
 #
 # Available project profiles:
+#   claude  socat bubblewrap
 #   rclone  Go SDK, Python, Hugo, Make, Fuse
 #
 # Available meta profiles:
@@ -263,6 +264,13 @@ profile_dotnet="dotnet-sdk"
 #   both (but it does not harm either).
 profile_aspnet="dotnet-sdk aspnet-runtime aspnet-targeting-pack"
 
+# Project profile "claude": Claude Code runtime dependencies.
+# - This installs the optional dependencies socat and bubblewrap, required for
+#   the sandboxing mode in Claude Code.
+# - Does not install Claude Code itself, as that is normally installed
+#   manually.
+profile_claude="socat bubblewrap"
+
 # Project profile "rclone": Rclone development environment.
 # - This installs Go SDK, Python, Hugo, Make and Fuse.
 # - Note: This does not install the rclone application itself, but the tools
@@ -287,7 +295,7 @@ profile_rclone="go python hugo make fuse3"
 
 # Meta profiles.
 profile_generic="$profile_tools $profile_git $profile_python $profile_cpp $profile_go $profile_dotnet"
-profile_all="$profile_generic $profile_rclone"
+profile_all="$profile_generic $profile_claude $profile_rclone"
 
 packages=""
 
@@ -301,12 +309,13 @@ while [ $# -gt 0 ]; do
         go)      packages="$packages $profile_go" ;;
         dotnet)  packages="$packages $profile_dotnet" ;;
         aspnet)  packages="$packages $profile_aspnet" ;;
+        claude)  packages="$packages $profile_claude" ;;
         rclone)  packages="$packages $profile_rclone" ;;
         generic) packages="$packages $profile_generic" ;;
         all)     packages="$packages $profile_all" ;;
         *)
             echo "Unknown profile: $1" >&2
-            echo "Supported profiles: tools, git, python, cpp, go, dotnet, aspnet, rclone, generic, all" >&2
+            echo "Supported profiles: tools, git, python, cpp, go, dotnet, aspnet, claude, rclone, generic, all" >&2
             echo "Additional packages can be added after a -- separator" >&2
             exit 1
             ;;

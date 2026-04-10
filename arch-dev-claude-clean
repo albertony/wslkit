@@ -56,7 +56,7 @@ bin_dir="${HOME}/.local/bin"
 
 # Resolve Claude-specific configuration directory.
 # It is ~/.claude by default, and can be overridden by variable
-# CLAUDE_CONFIG_DIR, but Claude does not consider XDG_CONFIG_HOME.
+# CLAUDE_CONFIG_DIR, Claude does not consider XDG_CONFIG_HOME.
 config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 
 # Resolve XDG standard base directories, falling back to XDG defaults.
@@ -69,17 +69,31 @@ cache_home="${XDG_CACHE_HOME:-$HOME/.cache}"
 # If not currently regular setup, then all executables in the version store
 # will be removed.
 echo "Cleaning up application files..."
+echo "Considering binary directory '${bin_dir}'"
+echo "Considering data directory '${data_home}'"
 find "${data_home}/claude/versions" -maxdepth 1 -type f -not -path "$(readlink -e "${bin_dir}/claude")" -delete 2> /dev/null
 
 # Remove data files.
+# Currently deleting using include strategy, but could consider changing to
+# exclude strategy, e.g. from $config_dir probably everything except files
+# CLAUDE.md, settings.json, .credentials.json, policy-limits.json,
+# keybindings.json should be deleted?
 echo "Cleaning up data files..."
-rm --recursive --force "${config_dir}/downloads"
-rm --recursive --force "${config_dir}/cache"
+echo "Considering configuration directory '${config_dir}'"
+echo "Considering cache directory '${cache_home}'"
+echo "Considering state directory '${state_home}'"
 rm --recursive --force "${config_dir}/backups"
+rm --recursive --force "${config_dir}/cache"
+rm --recursive --force "${config_dir}/debug"
+rm --recursive --force "${config_dir}/downloads"
 rm --recursive --force "${config_dir}/file-history"
-rm --recursive --force "${config_dir}/sessions"
-rm --recursive --force "${config_dir}/projects"
+rm --recursive --force "${config_dir}/image-cache"
+rm --recursive --force "${config_dir}/paste-cache"
 rm --recursive --force "${config_dir}/plans"
+rm --recursive --force "${config_dir}/projects"
+rm --recursive --force "${config_dir}/session-env"
+rm --recursive --force "${config_dir}/sessions"
+rm --recursive --force "${config_dir}/shell-snapshots"
 rm --recursive --force "${cache_home}/claude"
 rm --recursive --force "${cache_home}/claude-cli-nodejs"
 rm --recursive --force "${state_home}/claude"
