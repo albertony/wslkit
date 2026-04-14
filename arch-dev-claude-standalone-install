@@ -68,8 +68,8 @@
 # create the initial home directory structure either, but this will be created
 # when the application is started for the first time anyway.
 #
-# This downloads the latest version of the application executable into the
-# user-specific local install location, making it available as path
+# This downloads the specified or latest version of the application executable
+# into the user-specific local install location, making it available as path
 # ~/.local/bin/claude. It also ensures ~/.local/bin is added to PATH in
 # ~/.bashrc for future shell sessions. Then it creates a curated initial
 # configuration in current user's Claude configuration file (settings.json).
@@ -108,9 +108,12 @@
 # then there is also the potential issue with signing keys. These are exactly
 # things that the arch-upgrade script is handling.
 #
-# Passes any script arguments to the pacman commands, so can execute script
-# with --noconfirm for instance to run non-interactively proceeding without
-# prompting user.
+# Supports optional argument --version <version>/--version=<version> to install
+# a specific version instead of the latest. The version can be specified as
+# the name of a release channel, "latest" (latest published version) or
+# "stable" (one week delayed versions, skipping versions with major
+# regressions), or as a version number. When not specified, defaults to
+# "latest".
 #
 # NOTE: Assumes basic tools are already installed, including sudo.
 # Run script ./arch-setup first to ensure this!
@@ -126,6 +129,25 @@
 #    echo 'Please do not run this script as root' >&2
 #    exit 1
 #fi
+
+# Parse arguments.
+version=latest
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --version)
+            shift
+            version="$1"
+            ;;
+        --version=*)
+            version="${1#--version=}"
+            ;;
+        *)
+            echo "Unknown argument: $1" >&2
+            exit 1
+            ;;
+    esac
+    shift
+done
 
 # Resolve XDG conventional user binary directory.
 # This is where the Claude executable is installed by default, and here we
@@ -160,15 +182,20 @@ fi
 #echo
 echo "Installing Claude Code..."
 
-# Download latest version and install as user-specific application ~/.local/bin/claude.
+# Download version and install as user-specific application ~/.local/bin/claude.
 # For atomic binary replacement, downloads into temporary location, before moving into place.
 base_url=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases
-version=$(curl --fail --silent --show-error --location "${base_url}/latest")
-if [ -z "$version" ]; then
-    echo "Failed to fetch version" >&2
-    exit 1
+if echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "Specific version ${version}"
+else
+    echo "Release channel '${version}'"
+    version=$(curl --fail --silent --show-error --location "${base_url}/${version}")
+    if [ -z "$version" ]; then
+        echo "Failed to resolve release channel version" >&2
+        exit 1
+    fi
+    echo "Version ${version}"
 fi
-echo "Latest version is ${version}"
 manifest=$(curl --fail --silent --show-error --location "${base_url}/${version}/manifest.json" | tr -d '\n\r\t' | sed 's/ \+/ /g')
 if [ -z "$manifest" ]; then
     echo "Failed to fetch version manifest" >&2
@@ -226,40 +253,71 @@ if ! mv "/tmp/claude-installer-${version}" "${bin_dir}/claude"; then
 fi
 chmod +x "${bin_dir}/claude"
 echo "Executable 'claude' is now installed in location '${bin_dir}'"
-echo "Checking it by running with option '--version'..."
+echo "Checking it by running '${bin_dir}/claude --version'..."
 echo -n "Claude version output: "
 "${bin_dir}/claude" --version || echo "error (exit code $?)"
 
-# Ensure the Claude executable is in PATH.
+# Ensure the Claude executable is in PATH in future shell sessions.
 # It is installed into ~/.local/bin, which is a commonly used directory for
 # user-specific executables, but on Arch Linux it is not in PATH by default.
-if [ ! -f "${HOME}/.bashrc" ]; then
-    echo "WARNING: User profile '.bashrc' does not exist"
-    echo "WARNING: Unable to add the location to PATH automatically"
-elif grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
-    echo "The user profile '.bashrc' already adds the location to PATH"
-else
-    echo "Adding the location to PATH in user profile '.bashrc'"
-    echo "export PATH=\"${bin_dir_expr}:\${PATH}\"" >> "${HOME}/.bashrc"
-    #echo "NOTE: This takes effect in new shell sessions only"
-fi
-if echo "$PATH" | grep --quiet --extended-regexp "(^|:)${HOME}/\.local/bin(:|$)"; then
+# NOTE: Adding the PATH variable into the user profile '.bashrc'. One may
+# prefer '.bash_profile' for such things, but assuming Arch Linux default setup
+# where '.bash_profile' sources '.bashrc' everything might just as well be
+# put into '.bashrc'. Default '.bashrc' has a test for if the shell is running
+# interactively, so to make the PATH changes apply even when not running
+# interactively, like it would if put into '.bash_profile', then it needs to
+# be above this test. That is not ensured automatically here, but just noted
+# in a message for user to do manually. Also, since this is in bash-specific
+# profile, it will not have effect when running POSIX/sh type shell.
+# NOTE: Accurately detecting if this is already permanently configured in the
+# user profile in any possible way is complex, so the checks are simply looking
+# at the PATH in the current session. This may misbehave, e.g. if claude was
+# uninstalled and setting of PATH in profile was removed in the current shell
+# session and then running this to reinstall, it will find the executable in
+# PATH while in future sessions it will no longer be.
+if echo ":${PATH}:" | grep --quiet --fixed-strings ":${bin_dir}:"; then
     echo "The location is already in the PATH variable of this shell session"
-else
-    echo "NOTE: The PATH variable of this shell session does not contain the location"
-fi
-if claude_command=$(command -v claude); then
-    if [ "$claude_command" != "${bin_dir}/claude" ]; then
-        echo "WARNING: Command 'claude' in this shell session resolves to a different path"
-        echo "         '${claude_command}'"
-        echo "Checking it by running 'claude --version'..."
-        echo -n "Claude version output: "
-        claude --version || echo "error (exit code $?)"
-    #else
-    #    echo "Command 'claude' can be used in this shell session"
+    if claude_command=$(command -v claude); then
+        if [ "$claude_command" != "${bin_dir}/claude" ]; then
+            echo "WARNING: Command 'claude' in this shell session resolves to a different path."
+            echo "  Expected path was '${bin_dir}/claude'"
+            echo "  Path in this session is '${claude_command}'"
+            echo "Checking the command in this session by running 'claude --version'..."
+            echo -n "Claude version output: "
+            claude --version || echo "error (exit code $?)"
+            echo "WARNING: Something is wrong with the installation or environment"
+        else
+            # Note: Do not indicate claude can be used immediately, due to the
+            # CLAUDE_CONFIG_DIR logic below may require restarting the session!
+            #echo "Command 'claude' can be used in this shell session"
+            echo "NOTICE: Assuming PATH is persisted in the profile so the same will be true also"
+            echo "  for future sessions. If this is not the case, you can manually fix it by"
+            echo "  adding something like the following into the user profile '.bashrc',"
+            echo "  preferably near the top, before any check for shell running interactively:"
+            echo '  [[ ":$PATH:" != *":'"${bin_dir_expr}"':"* ]] && PATH="${PATH:+$PATH:}'"${bin_dir_expr}"'"'
+        fi
+    else
+        echo "WARNING: Command 'claude' is not available in this shell session"
+        echo "WARNING: Something is wrong with the installation or environment"
     fi
 else
-    echo "NOTE: Cannot run command 'claude' without path in this shell session"
+    echo "The location is not in the PATH variable of this shell session"
+    if [ ! -f "${HOME}/.bashrc" ]; then
+        echo "WARNING: User profile '.bashrc' does not exist"
+        echo "WARNING: Unable to add the location to PATH automatically. You can fix this"
+        echo "  manually by adding something like this, preferably near the top, before any"
+        echo "  check for shell running interactively"
+        echo '[[ ":$PATH:" != *":'"${bin_dir_expr}"':"* ]] && PATH="${PATH:+$PATH:}'"${bin_dir_expr}"'"'
+    else
+        echo "Adding the location to PATH in user profile '.bashrc'"
+        echo "NOTICE: This will be added to the end of the file, but if the file has a check"
+        echo "  for shell running interactively you might consider moving it above that check."
+        echo "  If this has recently already been configured in your profile but without"
+        echo "  restarting the shell, the result will be a duplicate entry."
+        echo '[[ ":$PATH:" != *":'"${bin_dir_expr}"':"* ]] && PATH="${PATH:+$PATH:}'"${bin_dir_expr}"'"' >> "${HOME}/.bashrc"
+        echo "NOTICE: You still cannot run command 'claude' without path in this shell session"
+        #echo "NOTICE: This takes effect in new shell sessions only"
+    fi
 fi
 
 #echo
@@ -279,18 +337,18 @@ echo "Configuring Claude Code..."
 config_dir="${CLAUDE_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/claude}" # The actual expanded value
 if [ -n "${CLAUDE_CONFIG_DIR}" ]; then
     config_dir_expr="${CLAUDE_CONFIG_DIR}" # Dummy, just use the literal value
-    echo "Variable CLAUDE_CONFIG_DIR is defined"
+    echo "Variable CLAUDE_CONFIG_DIR is currently defined"
     echo "Using configuration directory '${CLAUDE_CONFIG_DIR}' given by CLAUDE_CONFIG_DIR"
 else
     config_dir_expr='${XDG_CONFIG_HOME:-$HOME/.config}/claude' # The exact unexpanded expression to use in .bashrc
     if [ -n "${XDG_CONFIG_HOME}" ]; then
-        echo "Variable CLAUDE_CONFIG_DIR is not defined but XDG_CONFIG_HOME is"
+        echo "Variable CLAUDE_CONFIG_DIR is currently not defined but XDG_CONFIG_HOME is"
         echo "Using configuration directory '${XDG_CONFIG_HOME}/claude' based on XDG_CONFIG_HOME"
         # If we wanted the more specific expression without fallback to $HOME in .bashrc:
         #   config_dir_expr='${XDG_CONFIG_HOME}/claude'
         #echo "Using configuration directory '${XDG_CONFIG_HOME}/claude' based on XDG_CONFIG_HOME"
     else
-        echo "Variables CLAUDE_CONFIG_DIR and XDG_CONFIG_HOME are not defined"
+        echo "Variables CLAUDE_CONFIG_DIR and XDG_CONFIG_HOME are not currently defined"
         echo "Using configuration directory '${HOME}/.config/claude' from script defaults"
         # If we wanted the more specific expression without considering $XDG_CONFIG_HOME in .bashrc:
         #   config_dir_expr='${HOME}/.config/claude'
@@ -371,11 +429,12 @@ if [ ! -f "$settings_file" ] || [ -w "$settings_file" ]; then
 EOF
     else
         echo "Keeping existing user settings in file 'settings.json'"
-        echo "NOTE: Make sure the settings are correct and valid for the standalone setup"
-        echo "NOTE: Check especially that DISABLE_AUTOUPDATER=1 is set"
+        echo "NOTICE: Make sure the settings are correct and valid for the standalone setup."
+        echo "  Check especially that DISABLE_AUTOUPDATER=1 is set."
     fi
 else
-    echo "WARNING: Skipping initial user settings because there is an existing file 'settings.json' which is not writable"
+    echo "WARNING: Skipping initial user settings because there is an existing file"
+    echo "  'settings.json' which is not writable."
 fi
 
 # Ensure Claude uses the configured configuration directory in future sessions.
@@ -388,33 +447,40 @@ fi
 # .claude.json within that directory rather than at the home directory root.
 # If CLAUDE_CONFIG_DIR is already set in the current session but not yet in the
 # shell profile, it will still be added and a warning is issued.
+# NOTE: As when updating PATH above, we set this in .bashrc.
 if [ ! -f "${HOME}/.bashrc" ]; then
     echo "WARNING: User profile '.bashrc' does not exist"
-    echo "WARNING: Unable to override configuration directory with CLAUDE_CONFIG_DIR automatically"
-    echo "WARNING: You need to make sure the following are executed before starting claude:"
-    echo "WARNING: export CLAUDE_CONFIG_DIR=\"${config_dir_expr}\""
+    echo "WARNING: Unable to override configuration directory with CLAUDE_CONFIG_DIR"
+    echo "  automatically. You need to make sure the following are executed before"
+    echo "  starting claude:"
+    echo "  export CLAUDE_CONFIG_DIR=\"${config_dir_expr}\""
 elif grep --quiet --extended-regexp '^export CLAUDE_CONFIG_DIR=' "${HOME}/.bashrc"; then
     existing_expr=$(sed -n 's/^export CLAUDE_CONFIG_DIR="\(.*\)"$/\1/p' "${HOME}/.bashrc" | tail -1)
     eval "existing_path=\"$existing_expr\""
     if [ "$existing_path" = "$config_dir" ]; then # Note: This compare fully expanded paths, so may in fact use different variable references etc.
         echo "The user profile '.bashrc' already sets the configuration directory with CLAUDE_CONFIG_DIR"
         if [ -z "${CLAUDE_CONFIG_DIR}" ]; then
-            echo "NOTE: Variable CLAUDE_CONFIG_DIR is not in the current shell session"
+            echo "NOTICE: Variable CLAUDE_CONFIG_DIR is not in the current shell session"
             echo "WARNING: Restart the shell session or run the following before starting claude:"
-            echo "WARNING: export CLAUDE_CONFIG_DIR=\"${config_dir_expr}\""
+            echo "  export CLAUDE_CONFIG_DIR=\"${config_dir_expr}\""
         fi
     else
-        echo "WARNING: Configuration directory (CLAUDE_CONFIG_DIR) in '.bashrc' resolves to '${existing_expr}' but expected '${config_dir_expr}'"
+        echo "WARNING: Configuration directory (CLAUDE_CONFIG_DIR) in '.bashrc' resolves to"
+        echo "  '${existing_expr}' but expected '${config_dir_expr}'"
     fi
 else
     echo "Overriding configuration directory with CLAUDE_CONFIG_DIR in user profile '.bashrc'"
+    echo "NOTICE: This will be added to the end of the file, but if the file has a check"
+    echo "  for shell running interactively you might consider moving it above that check."
     echo "export CLAUDE_CONFIG_DIR=\"${config_dir_expr}\"" >> "${HOME}/.bashrc"
     if [ -n "${CLAUDE_CONFIG_DIR}" ]; then
         # It is implied that the value of $CLAUDE_CONFIG_DIR is the same as
         # $config_dir at this point, due to the logic where we set config_dir.
-        echo "Variable CLAUDE_CONFIG_DIR is already set in the current shell session"
+        echo "Since the variable CLAUDE_CONFIG_DIR is already set in the current shell session"
+        echo "  it should be safe to start claude immediately, but you may have to restart the"
+        echo "  shell session for any PATH changes reported above to take effect."
     else
         echo "WARNING: Restart the shell session or run the following before starting claude:"
-        echo "WARNING: export CLAUDE_CONFIG_DIR=\"${config_dir_expr}\""
+        echo "  export CLAUDE_CONFIG_DIR=\"${config_dir_expr}\""
     fi
 fi

@@ -257,11 +257,13 @@ for option in Color "#NoProgressBar" "#CheckSpace" "VerbosePkgLists"; do
             if command -v sed > /dev/null 2>&1; then
                 tmp=$(mktemp)
                 sed "s/${inactive_pat}/${active_val}/" /etc/pacman.conf > "$tmp" \
+                    && chmod --reference=/etc/pacman.conf "$tmp" \
                     && mv "$tmp" /etc/pacman.conf || { echo "Failed!" >&2; rm -f "$tmp"; exit 1; }
                 unset tmp
             elif command -v awk > /dev/null 2>&1; then
                 tmp=$(mktemp)
                 awk "/${inactive_pat}/{print \"${active_val}\"; next} {print}" /etc/pacman.conf > "$tmp" \
+                    && chmod --reference=/etc/pacman.conf "$tmp" \
                     && mv "$tmp" /etc/pacman.conf || { echo "Failed!" >&2; rm -f "$tmp"; exit 1; }
                 unset tmp
             else

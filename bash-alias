@@ -91,6 +91,12 @@ for definition in "$@"; do
     case "$name" in
         ''|*' '*) printf 'Skipping invalid alias (name is empty or contains space): %s\n' "$definition" >&2; continue ;;
     esac
+    old=$(command -v "$name" 2>/dev/null)
+    case "$old" in
+        /*) printf "WARNING: Alias name '%s' will mask existing command (%s)\n" "$name" "$old" >&2 ;;
+        ?*) printf "WARNING: Alias name '%s' will mask a shell builtin\n" "$name" >&2 ;;
+    esac
+    unset old
     name_escaped=$(printf '%s' "$name" | sed 's/[]\.^$*[]/\\&/g') # Escape BRE metacharacters
     value="${definition#*=}" # #*= strips up to and including the first = (the value)
     if [ "$raw" -eq 1 ]; then
@@ -104,7 +110,7 @@ for definition in "$@"; do
     else
         old=$(grep "^alias ${name_escaped}=" "$file")
         if [ -n "$old" ]; then
-            echo "Commenting out existing ${old}"
+            echo "WARNING: Commenting out existing ${old}"
             sed -i "s/^\(\\s*alias\\s\+${name_escaped}=.*\)$/#\\1/" "$file"
         fi
         unset old

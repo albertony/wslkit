@@ -9,10 +9,11 @@
 #
 
 "$(dirname "${0}")/bash-alias" "$@" \
-    "au=$(realpath "$(dirname "$0")/arch-upgrade") --color auto" \
-    "aun=$(realpath "$(dirname "$0")/arch-upgrade") --color auto --noconfirm"
+    "arch-upgrade=$(realpath "$(dirname "$0")/arch-upgrade")" \
+    "au=arch-upgrade --color auto" \
+    "aun=arch-upgrade --color auto --noconfirm"
     # Variants with additional option --force, but this is only needed in very
     # special cases, and then executing aliases au/aun with --force is
     # more than convenient enough!
-    #"auf=$(realpath "$(dirname "$0")/arch-upgrade") --color auto --force"
-    #"aufn=$(realpath "$(dirname "$0")/arch-upgrade") --color auto --force --noconfirm"
+    #"auf=arch-upgrade --color auto --force"
+    #"aufn=arch-upgrade --color auto --force --noconfirm"

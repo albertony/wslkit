@@ -101,21 +101,27 @@ find "${cache_home}" -type d -empty -delete 2> /dev/null
 rmdir "${HOME}/.config" 2> /dev/null # Remove parent of default config dir if now empty (not XDG-governed)
 rmdir "${HOME}/.local" 2> /dev/null # Remove parent of default bin, data and state dir if now empty (not XDG-governed)
 
-echo "Cleaning up PATH variable..."
-if [ ! -d "${bin_dir}" ] && [ -f "${HOME}/.bashrc" ]; then
-    if grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
-        sed --in-place '/^export PATH="\${HOME}\/\.local\/bin:\${PATH}"$/d' "${HOME}/.bashrc"
-        echo "Removed from user profile '.bashrc' the entry that added the now-removed '${bin_dir}' to PATH"
-        echo "NOTE: You should restart the shell session to refresh the environment variables"
-    fi
-fi
+# Just leave the PATH variable! There are so many ways this can be set, and the
+# install script sets a bit complex conditional expression, so a simple regex
+# is not enough. It is not really Claude-specific anyway, it is the XDG
+# conventional location for locally installed executable files so should be
+# fine to just leave it.
+# OLD:
+#echo "Cleaning up PATH variable..."
+#if [ ! -d "${bin_dir}" ] && [ -f "${HOME}/.bashrc" ]; then
+#    if grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{?PATH\}?"$' "${HOME}/.bashrc"; then
+#        sed --in-place '/^export PATH="\${HOME}\/\.local\/bin:\${PATH}"$/d' "${HOME}/.bashrc"
+#        echo "Removed from user profile '.bashrc' the entry that added the now-removed '${bin_dir}' to PATH"
+#        echo "NOTICE: You should restart the shell session to refresh the environment variables"
+#    fi
+#fi
 
 echo "Cleaning up CLAUDE_CONFIG_DIR variable..."
 if [ -f "${HOME}/.bashrc" ]; then
     if grep --quiet --extended-regexp '^export CLAUDE_CONFIG_DIR=' "${HOME}/.bashrc"; then
         sed --in-place '/^export CLAUDE_CONFIG_DIR=.*$/d' "${HOME}/.bashrc"
         echo "Removed from user profile '.bashrc' the entry that set CLAUDE_CONFIG_DIR"
-        echo "NOTE: You should restart the shell session to refresh the environment variables"
+        echo "NOTICE: You should restart the shell session to refresh the environment variables"
     fi
 fi
 

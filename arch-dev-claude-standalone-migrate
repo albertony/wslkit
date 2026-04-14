@@ -45,5 +45,3 @@ mv "$(readlink -e "${bin_dir}/claude")" "${bin_dir}/claude" && rm --recursive --
 find "${bin_dir}" -type d -empty -delete 2> /dev/null
 find "${data_home}" -type d -empty -delete 2> /dev/null
 rmdir "${HOME}/.local" 2> /dev/null # Remove parent if now empty (not XDG-governed)
-
-unset bin_dir data_home

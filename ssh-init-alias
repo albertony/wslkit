@@ -4,4 +4,5 @@
 #
 
 "$(dirname "${0}")/bash-alias" "$@" \
-    "ssh-init=. $(realpath "$(dirname "$0")/ssh-init")"
+    "ssh-init=. $(realpath "$(dirname "$0")/ssh-init")" \
+    "si=ssh-init"

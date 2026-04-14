@@ -15,5 +15,6 @@
 #fi
 
 "$(dirname "${0}")/arch-dev-claude-aliases" "$@" \
-    "ccu=$(realpath "$(dirname "$0")/arch-dev-claude-standalone-upgrade")" \
-    "ccun=$(realpath "$(dirname "$0")/arch-dev-claude-standalone-upgrade") --noconfirm"
+    "arch-dev-claude-standalone-upgrade=$(realpath "$(dirname "$0")/arch-dev-claude-standalone-upgrade")" \
+    "ccu=arch-dev-claude-standalone-upgrade" \
+    "ccun=arch-dev-claude-standalone-upgrade --noconfirm"

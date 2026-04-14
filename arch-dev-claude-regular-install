@@ -294,7 +294,7 @@ elif grep --quiet --extended-regexp '^export PATH="\$\{?HOME\}?/\.local/bin:\$\{
 else
     echo "Adding '~/.local/bin' to PATH in user profile '~/.bashrc'"
     echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${HOME}/.bashrc"
-    echo "NOTE: This takes effect in new shell sessions only"
+    echo "NOTICE: This takes effect in new shell sessions only"
 fi
 if echo "$PATH" | grep --quiet --extended-regexp "(^|:)${HOME}/\.local/bin(:|$)"; then
     echo "The current PATH variable already contains the '~/.local/bin' directory of current user"
@@ -306,7 +306,7 @@ if command -v claude > /dev/null 2>&1; then
     echo -n "Claude version output: "
     claude --version || echo "WARNING: 'claude --version' failed"
 else
-    echo "NOTE: The command 'claude' is not available in this shell session"
+    echo "NOTICE: The command 'claude' is not available in this shell session"
 fi
 
 unset bin_dir config_dir settings_file

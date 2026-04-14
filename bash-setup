@@ -83,7 +83,7 @@ EOF
         chown "${user}:${user}" "$file"
     else
         echo "Found existing file"
-        echo "Skipping: Not checking this just assuming it is correct"
+        echo "Skipping: Not checking the existing file and will just assume it is correct"
     fi
 
     echo "Checking .bashrc..."

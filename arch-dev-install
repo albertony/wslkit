@@ -6,8 +6,8 @@
 # relevant for a specific development environment. Multiple profiles can be
 # combined, as well as individual packages. The intention with this script is
 # to make it easier to remember and to install the basic set of packages
-# frequently used in different development environments, to quicly set up new
-# (and reinstall) WSL distributions. Also, an related intention is to make it
+# frequently used in different development environments, to quickly set up new
+# (and reinstall) WSL distributions. Also, a related intention is to make it
 # convenient to install these sets of packages in a single pacman invocation,
 # so that the dependency resolution is done once for all, to improve
 # performance and reduce risk of problems.
@@ -37,8 +37,8 @@
 #   rclone  Go SDK, Python, Hugo, Make, Fuse
 #
 # Available meta profiles:
-#   generic The combination of all generic profiles, but no project profiles
-#   all     The combination of all profiles
+#   generic Everything from all generic profiles, but no project profiles
+#   all     Everything from all profiles
 #
 # Examples:
 #   arch-dev-install git go python
@@ -323,7 +323,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if [ -z "$packages" ] && [ $# -eq 0 ]; then
+if [ -z "$packages" ] && [ $# -eq 0 ]; then # Note: running with '-- --noconfirm' would slip through, running pacman with empty package list
     echo "No profiles specified." >&2
     echo "Usage: arch-dev-install [profile...] [-- [pacman-args...]]" >&2
     exit 1
