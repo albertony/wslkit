@@ -140,10 +140,10 @@
 #   when running ./arch-setup, which should have been done when setting up the
 #   distro. However, we include them here as well, for completeness, and just
 #   in case, and since they will just be skipped if already installed.
-profile_tools="jq b3sum xxhash 7zip zip unzip diffutils patch nano wget curl sed grep"
+profile_tools="jq b3sum xxhash 7zip zip unzip diffutils patch less nano wget curl sed grep"
 
 # Generic profile "git": Git and related tools.
-# - This installs Diff, Patch, Git, SSH client/server and SSL toolkit.
+# - This installs Git, SSH client/server, SSL toolkit and Less.
 # - Package git brings the git command, with dependencies openssl, perl and
 #   more.
 # - Package openssh brings the SSH client, very relevant to use in combination
@@ -155,7 +155,12 @@ profile_tools="jq b3sum xxhash 7zip zip unzip diffutils patch nano wget curl sed
 #   when openssl is preinstalled, as it typically is, pacman will still consider
 #   it "installed as a dependency for another package" even if we explicit
 #   specify it here.
-profile_git="git openssh openssl"
+# - Git will refer to less as pager by default, while Arch only has more
+#   installed by default. While more is still found on nearly every Unix-like
+#   system for legacy compatibility, and git can be configured to use it (e.g.
+#   with 'git config --global core.pager more'), less is the standard for
+#   modern development workflows so we install it.
+profile_git="git openssh openssl less"
 
 # Generic profile "python": Python development environment.
 # - This installs Python, IPython, Pylint, Black, pytest, PyYAML and TOML Kit.
