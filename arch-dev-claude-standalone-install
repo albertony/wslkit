@@ -363,13 +363,25 @@ fi
 #   This will be ignored if not both of the (otherwise optional) dependencies
 #   socat and bubblewrap are installed.
 # - Disable all MCP servers.
-# - Disable auto-updater. Important to avoid the standalone setup being
+# - Disable built-in updater. Important to avoid the standalone setup being
 #   migrated to a regular setup! The application must be updated by downloading
-#   the new version manually, cannot use the 'claude update' command either.
-#   By default Claude checks for updates on startup and periodically while
+#   the new version of the executable manually. By default Claude uses an
+#   auto-updater, which checks for updates on startup and periodically while
 #   running, and it will download and install in the background, and they take
-#   effect the next time Claude Code is started.
+#   effect the next time Claude Code is started. The auto-updater can be
+#   disabled with DISABLE_AUTOUPDATER=1 (or
+#   CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1). The same underlying updater
+#   functionality that the auto-updater uses can also be triggered manually
+#   with CLI command 'claude update'. Setting DISABLE_UPDATES=1 (introduced in
+#   version 2.1.118) blocks all update paths including manual claude update,
+#   i.e. it is stricter than DISABLE_AUTOUPDATER.
+#   - DISABLE_UPDATES=1
+#     - This overrides (is stricter than) DISABLE_AUTOUPDATER.
 #   - DISABLE_AUTOUPDATER=1
+#     - This does nothing (is implicit) when DISABLE_UPDATES is set, and can
+#       be removed. It is kept for now just to be sure, and also since
+#       DISABLE_UPDATES is a newer option that has not been tested that much,
+#       will not apply if we need to downgraded at some point, etc.
 # - Skip automatic addition of the official plugin marketplace on first run.
 #   - CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1
 #   - It can be done manually later, from the /plugin slash command, by adding
@@ -420,6 +432,7 @@ if [ ! -f "$settings_file" ] || [ -w "$settings_file" ]; then
     "DISABLE_FEEDBACK_COMMAND": "1",
     "DISABLE_ERROR_REPORTING": "1",
     "DISABLE_AUTOUPDATER": "1",
+    "DISABLE_UPDATES": "1",
     "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1",
@@ -430,7 +443,7 @@ EOF
     else
         echo "Keeping existing user settings in file 'settings.json'"
         echo "NOTICE: Make sure the settings are correct and valid for the standalone setup."
-        echo "  Check especially that DISABLE_AUTOUPDATER=1 is set."
+        echo "  Check especially that DISABLE_UPDATES=1 (or DISABLE_AUTOUPDATER=1) is set."
     fi
 else
     echo "WARNING: Skipping initial user settings because there is an existing file"
