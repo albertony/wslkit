@@ -128,7 +128,11 @@ fi
 # - Download the version manifest and extract checksum (and size) for the
 #   application executable.
 # - Download the application executable as a temporary file, and verify
-#   checksum (and size).
+#   checksum (and size). Prefer the Zstandard compressed variant claude.zst,
+#   described by the separate manifest manifest.zst.json, which is less than a
+#   fourth of the size of the uncompressed executable. It is verified against
+#   the compressed manifest, then decompressed, and the result verified against
+#   the regular manifest like an uncompressed download.
 # - Run the downloaded application executable with argument "install", to
 #   perform the built-in installation procedure. This installs the executable
 #   into ~/.local/share/claude/versions, creates symlink ~/.local/bin/claude,
@@ -138,7 +142,8 @@ fi
 #   Note that this actually downloads the application executable it installs,
 #   and when this is the latest version it is exactly the same as the one we
 #   have already downloaded and are running the install with! That is 200 MiB
-#   wasted download!
+#   wasted download! Downloading the compressed variant, as done below, at
+#   least reduces our part of that waste to less than a fourth.
 #echo
 echo "Installing Claude Code application..."
 base_url=https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases
@@ -174,10 +179,76 @@ if [ -z "$expected_checksum" ]; then
     echo "Failed to fetch expected checksum from version manifest" >&2
     exit 1
 fi
-echo "Downloading installer..."
-if ! curl --fail --silent --show-error --location "${base_url}/${version}/linux-x64/claude" --output "/tmp/claude-installer-${version}"; then # Official install.sh script downloads to "$HOME/.claude/downloads/claude-$version-$platform"
-    echo "Failed to download installer" >&2
-    exit 1
+# Prefer a compressed download, to reduce network traffic. In addition to the
+# regular manifest.json there is a manifest.zst.json, describing the same
+# executables compressed with Zstandard and published alongside them as
+# claude.zst instead of claude. For linux-x64 the compressed download is around
+# 65 MiB instead of around 300 MiB, i.e. less than a fourth! Note that this only
+# helps for the temporary installer downloaded here, the built-in install
+# procedure still downloads whatever it downloads on its own.
+# The size and checksum in the compressed manifest describe the compressed file,
+# so they are verified on the downloaded file before decompressing, and then the
+# decompressed result is verified against the size and checksum from the regular
+# manifest just like an uncompressed download. The executable being run is
+# therefore verified exactly the same way regardless of which path was taken.
+# This requires the zstd utility. On Arch Linux it is always installed, since
+# package zstd is an indirect dependency of pacman itself (through libarchive),
+# but we check for it anyway and fall back to the uncompressed download.
+# We also fall back when there is no compressed manifest, which is the case for
+# older versions published before the compressed variants were introduced.
+downloaded=
+if ! command -v zstd > /dev/null 2>&1; then
+    echo "NOTICE: Missing zstd utility so unable to use the smaller compressed download"
+else
+    zst_manifest=$(curl --fail --silent --show-error --location "${base_url}/${version}/manifest.zst.json" 2> /dev/null | tr -d '\n\r\t' | sed 's/ \+/ /g')
+    if [ -z "$zst_manifest" ]; then
+        echo "NOTICE: No compressed variant published for this version"
+    else
+        expected_zst_size=$(echo "$zst_manifest" | sed 's/.*"linux-x64": {[^}]*"size": \([0-9]*\).*/\1/')
+        if [ -z "$expected_zst_size" ]; then
+            echo "Failed to fetch expected size from compressed version manifest" >&2
+            exit 1
+        fi
+        expected_zst_checksum=$(echo "$zst_manifest" | sed 's/.*"linux-x64": {[^}]*"checksum": "\([^"]*\)".*/\1/')
+        if [ -z "$expected_zst_checksum" ]; then
+            echo "Failed to fetch expected checksum from compressed version manifest" >&2
+            exit 1
+        fi
+        echo "Downloading compressed installer..."
+        if ! curl --fail --silent --show-error --location "${base_url}/${version}/linux-x64/claude.zst" --output "/tmp/claude-installer-${version}.zst"; then
+            echo "Failed to download compressed installer" >&2
+            rm --force "/tmp/claude-installer-${version}.zst"
+            exit 1
+        fi
+        echo "Verifying compressed download..."
+        actual_zst_size=$(stat -c %s "/tmp/claude-installer-${version}.zst")
+        if [ "$actual_zst_size" != "$expected_zst_size" ]; then
+            echo "Size mismatch, expected ${expected_zst_size} but was ${actual_zst_size}" >&2
+            rm --force "/tmp/claude-installer-${version}.zst"
+            exit 1
+        fi
+        actual_zst_checksum=$(sha256sum "/tmp/claude-installer-${version}.zst" | cut -d' ' -f1)
+        if [ "$actual_zst_checksum" != "$expected_zst_checksum" ]; then
+            echo "Checksum mismatch, expected ${expected_zst_checksum} but was ${actual_zst_checksum}" >&2
+            rm --force "/tmp/claude-installer-${version}.zst"
+            exit 1
+        fi
+        echo "Decompressing installer..."
+        if ! zstd --decompress --quiet --stdout "/tmp/claude-installer-${version}.zst" > "/tmp/claude-installer-${version}"; then
+            echo "Failed to decompress installer" >&2
+            rm --force "/tmp/claude-installer-${version}.zst" "/tmp/claude-installer-${version}"
+            exit 1
+        fi
+        rm --force "/tmp/claude-installer-${version}.zst"
+        downloaded=1
+    fi
+fi
+if [ -z "$downloaded" ]; then
+    echo "Downloading installer..."
+    if ! curl --fail --silent --show-error --location "${base_url}/${version}/linux-x64/claude" --output "/tmp/claude-installer-${version}"; then # Official install.sh script downloads to "$HOME/.claude/downloads/claude-$version-$platform"
+        echo "Failed to download installer" >&2
+        exit 1
+    fi
 fi
 echo "Verifying download..."
 actual_size=$(stat -c %s "/tmp/claude-installer-${version}")
