@@ -158,23 +158,23 @@ if [ -z "$manifest" ]; then
     echo "Failed to fetch version manifest" >&2
     exit 1
 fi
-manifest_version=$(echo "$manifest" | sed 's/.*"version": "\([^"]*\)".*/\1/')
+manifest_version=$(echo "$manifest" | sed -n 's/.*"version": "\([^"]*\)".*/\1/p')
 if [ "$version" != "$manifest_version" ]; then
     echo "Version mismatch, expected ${version} but was ${manifest_version}" >&2
     exit 1
 fi
-manifest_date=$(echo "$manifest" | sed 's/.*"buildDate": "\([^"]*\)".*/\1/')
+manifest_date=$(echo "$manifest" | sed -n 's/.*"buildDate": "\([^"]*\)".*/\1/p')
 if [ -n "$manifest_date" ]; then
     echo "Published $(date --date="${manifest_date}" 2> /dev/null) (${manifest_date})"
 else
     echo "Unable to find published date"
 fi
-expected_size=$(echo "$manifest" | sed 's/.*"linux-x64": {[^}]*"size": \([0-9]*\).*/\1/')
+expected_size=$(echo "$manifest" | sed -n 's/.*"linux-x64": {[^{}]*"size": \([0-9]*\).*/\1/p')
 if [ -z "$expected_size" ]; then
     echo "Failed to fetch expected size from version manifest" >&2
     exit 1
 fi
-expected_checksum=$(echo "$manifest" | sed 's/.*"linux-x64": {[^}]*"checksum": "\([^"]*\)".*/\1/')
+expected_checksum=$(echo "$manifest" | sed -n 's/.*"linux-x64": {[^{}]*"checksum": "\([^"]*\)".*/\1/p')
 if [ -z "$expected_checksum" ]; then
     echo "Failed to fetch expected checksum from version manifest" >&2
     exit 1
@@ -204,12 +204,12 @@ else
     if [ -z "$zst_manifest" ]; then
         echo "NOTICE: No compressed variant published for this version"
     else
-        expected_zst_size=$(echo "$zst_manifest" | sed 's/.*"linux-x64": {[^}]*"size": \([0-9]*\).*/\1/')
+        expected_zst_size=$(echo "$zst_manifest" | sed -n 's/.*"linux-x64": {[^{}]*"size": \([0-9]*\).*/\1/p')
         if [ -z "$expected_zst_size" ]; then
             echo "Failed to fetch expected size from compressed version manifest" >&2
             exit 1
         fi
-        expected_zst_checksum=$(echo "$zst_manifest" | sed 's/.*"linux-x64": {[^}]*"checksum": "\([^"]*\)".*/\1/')
+        expected_zst_checksum=$(echo "$zst_manifest" | sed -n 's/.*"linux-x64": {[^{}]*"checksum": "\([^"]*\)".*/\1/p')
         if [ -z "$expected_zst_checksum" ]; then
             echo "Failed to fetch expected checksum from compressed version manifest" >&2
             exit 1
@@ -379,5 +379,3 @@ if command -v claude > /dev/null 2>&1; then
 else
     echo "NOTICE: The command 'claude' is not available in this shell session"
 fi
-
-unset bin_dir config_dir settings_file

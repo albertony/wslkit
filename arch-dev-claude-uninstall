@@ -182,5 +182,3 @@ fi
 #    echo "Failed!" >&2
 #    exit 1
 #fi
-
-unset bin_dir config_dir claude_json data_home state_home cache_home

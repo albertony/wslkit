@@ -117,5 +117,3 @@ find "${config_dir}" -type d -empty -delete 2> /dev/null
 find "${data_home}" -type d -empty -delete 2> /dev/null
 find "${state_home}" -type d -empty -delete 2> /dev/null
 find "${cache_home}" -type d -empty -delete 2> /dev/null
-
-unset bin_dir config_dir data_home state_home cache_home

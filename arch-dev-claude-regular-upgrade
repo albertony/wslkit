@@ -75,7 +75,7 @@ if [ ! -L "${bin_dir}/claude" ]; then
     echo "The path '${bin_dir}/claude' is not a symbolic link so this looks like a standalone and not regular setup" >&2
     exit 1
 fi
-existing_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
+existing_version=$(claude --version | sed -n 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/p')
 if [ -z "$existing_version" ]; then
     echo "Failed to find existing version from output of command 'claude'" >&2
     exit 1
@@ -95,12 +95,12 @@ if [ -z "$manifest" ]; then
     echo "Failed to fetch version manifest" >&2
     exit 1
 fi
-manifest_version=$(echo "$manifest" | sed 's/.*"version": "\([^"]*\)".*/\1/')
+manifest_version=$(echo "$manifest" | sed -n 's/.*"version": "\([^"]*\)".*/\1/p')
 if [ "$latest_version" != "$manifest_version" ]; then
     echo "Version mismatch, expected ${latest_version} but was ${manifest_version}" >&2
     exit 1
 fi
-manifest_date=$(echo "$manifest" | sed 's/.*"buildDate": "\([^"]*\)".*/\1/')
+manifest_date=$(echo "$manifest" | sed -n 's/.*"buildDate": "\([^"]*\)".*/\1/p')
 if [ -n "$manifest_date" ]; then
     echo "Latest version was published $(date --date="${manifest_date}" 2> /dev/null) (${manifest_date})"
 else
@@ -124,7 +124,7 @@ if [ "$latest_version" != "$existing_version" ]; then
         echo "Failed!" >&2
         exit 1
     fi
-    new_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
+    new_version=$(claude --version | sed -n 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/p')
     if [ -z "$new_version" ]; then
         echo "Failed to find new version from output of command 'claude'" >&2
         exit 1
@@ -159,5 +159,3 @@ for pid_file in "${config_dir}/sessions/"*.json; do
         fi
     fi
 done
-
-unset bin_dir config_dir

@@ -100,7 +100,7 @@ if [ -L "${bin_dir}/claude" ]; then
     echo "The path '${bin_dir}/claude' is a symbolic link so this looks like a regular and not standalone setup" >&2
     exit 1
 fi
-existing_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
+existing_version=$(claude --version | sed -n 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/p')
 if [ -z "$existing_version" ]; then
     echo "Failed to find existing version from output of command 'claude'" >&2
     exit 1
@@ -125,12 +125,12 @@ if [ -z "$manifest" ]; then
     echo "Failed to fetch version manifest" >&2
     exit 1
 fi
-manifest_version=$(echo "$manifest" | sed 's/.*"version": "\([^"]*\)".*/\1/')
+manifest_version=$(echo "$manifest" | sed -n 's/.*"version": "\([^"]*\)".*/\1/p')
 if [ "$version" != "$manifest_version" ]; then
     echo "Version mismatch, expected ${version} but was ${manifest_version}" >&2
     exit 1
 fi
-manifest_date=$(echo "$manifest" | sed 's/.*"buildDate": "\([^"]*\)".*/\1/')
+manifest_date=$(echo "$manifest" | sed -n 's/.*"buildDate": "\([^"]*\)".*/\1/p')
 if [ -n "$manifest_date" ]; then
     echo "It was published $(date --date="${manifest_date}" 2> /dev/null) (${manifest_date})"
 else
@@ -149,12 +149,12 @@ if [ "$version" != "$existing_version" ]; then
         * ) echo "Skipped" >&2; exit 2;; # Note: Exit code 2 here to indicate not an error but an update was available!
         esac
     fi
-    expected_size=$(echo "$manifest" | sed 's/.*"linux-x64": {[^}]*"size": \([0-9]*\).*/\1/')
+    expected_size=$(echo "$manifest" | sed -n 's/.*"linux-x64": {[^{}]*"size": \([0-9]*\).*/\1/p')
     if [ -z "$expected_size" ]; then
         echo "Failed to fetch expected size from version manifest" >&2
         exit 1
     fi
-    expected_checksum=$(echo "$manifest" | sed 's/.*"linux-x64": {[^}]*"checksum": "\([^"]*\)".*/\1/')
+    expected_checksum=$(echo "$manifest" | sed -n 's/.*"linux-x64": {[^{}]*"checksum": "\([^"]*\)".*/\1/p')
     if [ -z "$expected_checksum" ]; then
         echo "Failed to fetch expected checksum from version manifest" >&2
         exit 1
@@ -185,12 +185,12 @@ if [ "$version" != "$existing_version" ]; then
         if [ -z "$zst_manifest" ]; then
             echo "NOTICE: No compressed variant published for this version"
         else
-            expected_zst_size=$(echo "$zst_manifest" | sed 's/.*"linux-x64": {[^}]*"size": \([0-9]*\).*/\1/')
+            expected_zst_size=$(echo "$zst_manifest" | sed -n 's/.*"linux-x64": {[^{}]*"size": \([0-9]*\).*/\1/p')
             if [ -z "$expected_zst_size" ]; then
                 echo "Failed to fetch expected size from compressed version manifest" >&2
                 exit 1
             fi
-            expected_zst_checksum=$(echo "$zst_manifest" | sed 's/.*"linux-x64": {[^}]*"checksum": "\([^"]*\)".*/\1/')
+            expected_zst_checksum=$(echo "$zst_manifest" | sed -n 's/.*"linux-x64": {[^{}]*"checksum": "\([^"]*\)".*/\1/p')
             if [ -z "$expected_zst_checksum" ]; then
                 echo "Failed to fetch expected checksum from compressed version manifest" >&2
                 exit 1
@@ -256,7 +256,7 @@ if [ "$version" != "$existing_version" ]; then
         exit 1
     fi
     chmod +x "${bin_dir}/claude"
-    new_version=$(claude --version | sed 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/')
+    new_version=$(claude --version | sed -n 's/^\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\) (Claude Code)$/\1/p')
     if [ -z "$new_version" ]; then
         echo "Failed to find new version from output of command 'claude'" >&2
         exit 1
