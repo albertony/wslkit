@@ -275,11 +275,15 @@ rm --force "/tmp/claude-installer-${version}"
 # Write relevant settings to the Claude configuration file (${config_dir}/settings.json,
 # by default ~/.claude/settings.json):
 # - Enable sandbox, but with regular permissions mode (auto-allow is default).
+#   This will be ignored if not both of the (otherwise optional) dependencies
+#   socat and bubblewrap are installed.
 # - Disable all MCP servers.
 # - Skip automatic addition of the official plugin marketplace on first run.
 #   - CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1
 #   - It can be done manually later, from the /plugin slash command, by adding
 #     "anthropics/claude-plugins-official" as a Marketplace.
+# - Skip creating a standard desktop entry file on first prompt, which is used
+#   to register deep linking (URL handler) for claude-cli:// URLs.
 # - Enable more privacy, minimize interference and unnecessary network traffic.
 #   - Disable telemetry, error reporting and feedback prompts.
 #     - DISABLE_TELEMETRY=1
@@ -327,11 +331,12 @@ if [ ! -f "$settings_file" ] || [ -w "$settings_file" ]; then
         cat > "$settings_file" << 'EOF'
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "disableDeepLinkRegistration": "disable",
+  "allowedMcpServers": [],
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": false
   },
-  "allowedMcpServers": [],
   "env": {
     "DISABLE_TELEMETRY": "1",
     "DISABLE_FEEDBACK_COMMAND": "1",

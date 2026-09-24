@@ -13,10 +13,11 @@
 # environment variables that Claude is known to check for custom locations.
 # The defaults are all within the current user's home directory. Claude
 # considers environment variable CLAUDE_CONFIG_DIR, falling back to ~/.claude
-# for main configuration. It does not consider XDG_CONFIG_HOME. For other
-# files, Claude adheres to the XDG standard, considering base directories from
-# environment variables XDG_DATA_HOME, XDG_STATE_HOME and XDG_CACHE_HOME,
-# falling back to ~/.local/share, ~/.local/state and ~/.cache respectively.
+# for main configuration, but does not consider XDG_CONFIG_HOME for this. For
+# other files, Claude adheres to the XDG standard, considering base directories
+# from environment variables XDG_DATA_HOME, XDG_STATE_HOME and XDG_CACHE_HOME,
+# and in some cases XDG_CONFIG_HOME (instead of CLAUDE_CONFIG_DIR), falling back
+# to ~/.local/share, ~/.local/state, ~/.cache and ~/.config respectively.
 #
 # Removes the application executables and the global/user configuration. Also
 # removes any remaining empty directories from the user home, assuming if they
@@ -30,10 +31,10 @@
 # their own .claude subdirectory with project-specific configuration files.
 # These are of course not cleaned up by this script. There is one exception:
 # If the home directory has been opened in Claude Code, then we may have gotten
-# an additional configuration file ${config_dir}/settings.local.json for local
-# project settings of the home directory, in addition to the existing
-# ${config_dir}/settings.json for user settings which overlaps with the shared
-# project settings for the home directory. We will delete both of these.
+# an additional configuration file ${claude_config_dir}/settings.local.json for
+# local project settings of the home directory, in addition to the existing
+# ${claude_config_dir}/settings.json for user settings which overlaps with the
+# shared project settings for the home directory. We will delete both of these.
 #
 # Passes any script arguments to the pacman commands, so can execute script with
 # --noconfirm for instance to run non-interactively proceeding without prompting
@@ -59,45 +60,54 @@ bin_dir="${HOME}/.local/bin"
 # default, but stored as .claude.json inside the config directory when
 # CLAUDE_CONFIG_DIR is set. Claude does not consider XDG_CONFIG_HOME for
 # either of these.
-config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+claude_config_dir="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 if [ -n "${CLAUDE_CONFIG_DIR}" ]; then
     claude_json="${CLAUDE_CONFIG_DIR}/.claude.json"
 else
     claude_json="${HOME}/.claude.json"
 fi
 
+# There is also a seprate Anthropic config dir, where an Anthropic profile
+# is stored if Anthropic Console account was used as the login method. This
+# is shared with ant CLI, if that is installed, but we assume not.
+anthropic_config_dir="${ANTHROPIC_CONFIG_DIR:-$os_config_home}"
+
 # Resolve XDG standard base directories, falling back to XDG defaults.
-# Ignoring XDG_CONFIG_HOME as per comment above.
-data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
-state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
-cache_home="${XDG_CACHE_HOME:-$HOME/.cache}"
+os_config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+os_data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+os_state_home="${XDG_STATE_HOME:-$HOME/.local/state}"
+os_cache_home="${XDG_CACHE_HOME:-$HOME/.cache}"
 
 # Remove application files.
 echo "Removing application files..."
 echo "Considering binary directory '${bin_dir}'"
-echo "Considering data directory '${data_home}'"
+echo "Considering os data directory '${os_data_home}'"
 rm --force "${bin_dir}/claude" # In regular setup this is a symlink to the current version of the application executable, in standalone this is the actual executable
-rm --recursive --force "${data_home}/claude" # In regular setup this contains multiple versions of the actual application executable
-rm --force "${data_home}/applications/claude-code-url-handler.desktop"
+rm --recursive --force "${os_data_home}/claude" # In regular setup this contains multiple versions of the actual application executable
 
 # Remove data files.
 echo "Removing data files..."
-echo "Considering global configuration file '${claude_json}'"
-echo "Considering configuration directory '${config_dir}'"
-echo "Considering cache directory '${cache_home}'"
-echo "Considering state directory '${state_home}'"
+echo "Considering global claude configuration file '${claude_json}'"
+echo "Considering claude configuration directory '${claude_config_dir}'"
+echo "Considering anthropic configuration directory '${anthropic_config_dir}'"
+echo "Considering os configuration directory '${os_config_home}'"
+echo "Considering os cache directory '${os_cache_home}'"
+echo "Considering os state directory '${os_state_home}'"
 rm --force "${claude_json}" # Remove global settings, with user preferences, OAuth session, state etc.
-rm --recursive --force "${config_dir}" # Remove configuration directory, with user settings, backups, downloads, cache
-rm --recursive --force "${cache_home}/claude" # Cache
-rm --recursive --force "${cache_home}/claude-cli-nodejs" # Cache
-rm --recursive --force "${state_home}/claude" # Locks
+rm --recursive --force "${claude_config_dir}" # Remove configuration directory, with user settings, backups, downloads, cache
+rm --recursive --force "${anthropic_config_dir}" # Remove the additional Anthropic configuration directory, with any Anthropic profiles containing credentials for Anthropic Console
+rm --recursive --force "${os_cache_home}/claude" # Cache
+rm --recursive --force "${os_cache_home}/claude-cli-nodejs" # Cache
+rm --recursive --force "${os_state_home}/claude" # Locks
+rm --force "${os_config_home}/applications/claude-code-url-handler.desktop" # Desktop entry
+
 
 # Cleanup remaining empty directories.
 echo "Cleaning up remaining empty directories..."
 find "${bin_dir}" -type d -empty -delete 2> /dev/null
-find "${data_home}" -type d -empty -delete 2> /dev/null
-find "${state_home}" -type d -empty -delete 2> /dev/null
-find "${cache_home}" -type d -empty -delete 2> /dev/null
+find "${os_data_home}" -type d -empty -delete 2> /dev/null
+find "${os_state_home}" -type d -empty -delete 2> /dev/null
+find "${os_cache_home}" -type d -empty -delete 2> /dev/null
 rmdir "${HOME}/.config" 2> /dev/null # Remove parent of default config dir if now empty (not XDG-governed)
 rmdir "${HOME}/.local" 2> /dev/null # Remove parent of default bin, data and state dir if now empty (not XDG-governed)
 

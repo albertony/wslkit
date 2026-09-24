@@ -3,7 +3,10 @@
 # Configure aliases in bash shell profile.
 #
 # By default considers the current user's profile, ~/.bashrc, a different file
-# may be specified as argument.
+# may be specified either as an argument or with option --file. The latter is
+# required for a file path containing '=', which would otherwise be mistaken
+# for an alias definition. Note that the shell does not perform tilde expansion
+# after the '=' of an option, so use "${HOME}/.bashrc" and not ~/.bashrc there.
 #
 # One or more alias definitions can be given as arguments with form
 # "name=value", i.e. without the alias command itself first. The value part
@@ -12,6 +15,10 @@
 # value itself contains single quotes, so option --raw can be supplied if you
 # want to take charge of the quoting yourself, then the entire string will be
 # supplied to the alias command verbatim.
+#
+# This script can be run with argument --dry-run or -n to only report what
+# would be changed, without modifying the profile. Exit code is then 2 if there
+# was anything to change, and 0 if everything was already defined.
 #
 # The main advantages of using this script are simpler syntax for bulk creating
 # multiple aliases, and checking for existing aliases. If an existing alias
@@ -24,22 +31,30 @@
 #   bash-alias --raw "ls='ls --color=auto'"
 #   bash-alias ~/.bashrc "ls=ls --color=auto" "grep=grep --color=auto"
 #   bash-alias --raw ~/.bashrc "ls='ls --color=auto'" "grep='grep --color=auto'"
+#   bash-alias --file="${HOME}/.bashrc" "ls=ls --color=auto"
 #
 
 if [ $# -lt 1 ]; then
     echo "Missing arguments" >&2
-    echo "Usage: ${0} [--raw] [file] name=value..." >&2
+    echo "Usage: ${0} [--raw] [--dry-run] [file|--file=file] name=value..." >&2
     exit 1
 fi
 
 # Handle options.
 # They may be anywhere in the list of arguments, looking for any prefixed
 # with '-', except the special end of options marker "--", recognizing
-# flag --raw, warning about any other.
+# flags --raw and --dry-run, and option --file, warning about any other.
+# Note that only the --file=value form is supported, and not a separate value
+# argument, since that value would in turn be indistinguishable from the
+# positional file argument in the loop below.
 raw=0
+dry_run=0
+file=""
 for arg in "$@"; do
     case "$arg" in
         --raw) raw=1 ;;
+        --dry-run|-n) dry_run=1 ;;
+        --file=*) file="${arg#--file=}" ;;
         --) break ;;
         -*) printf 'Unknown flag: %s\n' "$arg" >&2; exit 1 ;;
     esac
@@ -47,11 +62,12 @@ done
 unset arg
 
 # Handle file argument.
-# Optional with fall-back to ~/.bashrc.
+# Optional with fall-back to ~/.bashrc, unless already given with option
+# --file above, in which case an additional file argument is an error.
 # This may be anywhere in the list of arguments, looking for the first that
 # is not an option (handled above) and does not contain '=', assuming it must
-# then be a file path.
-file=""
+# then be a file path. A file path containing '=' must therefore be given with
+# option --file instead.
 for arg in "$@"; do
     case "$arg" in
         -*) continue ;; # Ignore (option, already handled)
@@ -75,22 +91,39 @@ if [ ! -f "$file" ]; then
 fi
 
 # Process aliases.
+changed=0
+# Lines handled so far in this run, to recognize an alias given more than once
+# among the arguments. Checking the profile alone is not enough, since in a dry
+# run nothing is written to it, and it would then be reported as if it was
+# going to be added twice.
+pending=
 for definition in "$@"; do
     case "$definition" in
+        -*) continue ;; # Ignore (option, already handled). Must be before the
+                        # test below, since --file=value contains '='.
         *=*) ;;
         *) continue ;; # Ignore (already handled)
     esac
     name="${definition%%=*}" # %%=* strips from the first = to the end (the name)
     # Verify valid name.
     # Name is required, i.e. cannot be empty, definition cannot be just in form
-    # "=value". Other than that name can be just about anything, however the
-    # shell unconditionally interprets the first word before a space as the
-    # command so in reality the name cannot contain space. This will also catch
-    # arguments incorrectly including the alias command, e.g.
-    # "alias ls='ls --color=auto'" (should be "ls=ls --color=auto").
-    case "$name" in
-        ''|*' '*) printf 'Skipping invalid alias (name is empty or contains space): %s\n' "$definition" >&2; continue ;;
-    esac
+    # "=value". In addition bash does not allow '/', '$', '`' and '=', nor any
+    # of the shell metacharacters '|', '&', ';', '(', ')', '<', '>' and
+    # whitespace, nor the quoting characters '\', "'" and '"', in an alias
+    # name. Defining such an alias would only make bash report "invalid alias
+    # name" when the profile is executed, so they are rejected here instead.
+    # This also catches arguments incorrectly including the alias command, e.g.
+    # "alias ls='ls --color=auto'" (should be "ls=ls --color=auto"), since that
+    # contains space.
+    # NOTE: The name can never contain '=' anyway, since it is taken as what
+    # comes before the first '=' of the definition, but it is included for
+    # completeness.
+    # NOTE: Rejecting '/' also keeps the name safe to use in the sed expression
+    # below, where it would otherwise have ended the substitute command.
+    if [ -z "$name" ] || printf '%s' "$name" | grep -q '[/$`=|&;()<>\'"'"'" ]'; then
+        printf 'Skipping invalid alias (name is empty or contains invalid characters): %s\n' "$definition" >&2
+        continue
+    fi
     old=$(command -v "$name" 2>/dev/null)
     case "$old" in
         /*) printf "WARNING: Alias name '%s' will mask existing command (%s)\n" "$name" "$old" >&2 ;;
@@ -107,15 +140,46 @@ for definition in "$@"; do
     line_escaped=$(printf '%s' "$line" | sed 's/[]\.^$*[]/\\&/g')
     if grep -q "^${line_escaped}$" "$file"; then
         echo "Skipping ${line}: Already defined"
+    elif printf '%s\n' "$pending" | grep -q "^${line_escaped}$"; then
+        echo "Skipping ${line}: Duplicate definition"
     else
         old=$(grep "^alias ${name_escaped}=" "$file")
         if [ -n "$old" ]; then
-            echo "WARNING: Commenting out existing ${old}"
-            sed -i "s/^\(\\s*alias\\s\+${name_escaped}=.*\)$/#\\1/" "$file"
+            if [ "$dry_run" -eq 1 ]; then
+                echo "WARNING: Would comment out existing ${old}"
+            else
+                echo "WARNING: Commenting out existing ${old}"
+                if ! sed -i "s/^\(\\s*alias\\s\+${name_escaped}=.*\)$/#\\1/" "$file"; then
+                    echo "Failed to update bash user profile '${file}'" >&2
+                    exit 1
+                fi
+            fi
         fi
         unset old
-        echo "Adding ${line}"
-        printf '%s\n' "${line}" >> "$file"
+        if [ "$dry_run" -eq 1 ]; then
+            echo "Would add ${line}"
+        else
+            echo "Adding ${line}"
+            # Make sure existing content is terminated, else the definition
+            # would be appended to the last line instead of as a new line.
+            if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then
+                if ! printf '\n' >> "$file"; then
+                    echo "Failed to write to bash user profile '${file}'" >&2
+                    exit 1
+                fi
+            fi
+            if ! printf '%s\n' "${line}" >> "$file"; then
+                echo "Failed to write to bash user profile '${file}'" >&2
+                exit 1
+            fi
+        fi
+        pending="${pending}
+${line}"
+        changed=1
     fi
 done
-unset raw file definition name name_escaped value line line_escaped
+if [ "$dry_run" -eq 1 ] && [ "$changed" -eq 1 ]; then
+    echo "NOTICE: Nothing was written, since this is a dry run"
+    exit 2 # Note: Exit code 2 here to indicate not an error but that there was something to change!
+fi
+unset raw dry_run changed pending file definition name name_escaped value line line_escaped

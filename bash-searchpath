@@ -1,0 +1,223 @@
+#!/bin/sh
+#
+# Ensure given directories are in the command search path, i.e. the PATH
+# environment variable, of future shell sessions.
+# Typical example is ~/.local/bin, which is a commonly used directory for
+# user-specific executables, but on Arch Linux it is not in PATH by default.
+#
+# By default considers the current user's profile, ~/.bashrc, a different file
+# may be specified with option --file. Note that the shell does not perform
+# tilde expansion after the '=' of an option, so use "${HOME}/.bashrc" and not
+# ~/.bashrc there.
+#
+# One or more directories can be given as arguments. For each of them a line
+# is appended to the profile, on the form:
+#   [[ ":$PATH:" != *":dir:"* ]] && PATH="${PATH:+$PATH:}dir"
+# The test makes the line harmless to execute repeatedly: if the path is
+# already in PATH it does nothing, so a duplicate entry is never created even
+# when the profile is executed more than once in the same session.
+#
+# The argument is written to the profile exactly as given. To keep the profile
+# portable, rather than tied to one specific user, supply a variable reference
+# in single quotes, so that the shell does not expand it before this script
+# sees it:
+#   bash-searchpath '${HOME}/.local/bin'
+# It is expanded here only to report whether it is in PATH of, and exists in,
+# the current shell session. With double quotes the shell expands it first, and
+# the resulting absolute path is what ends up in the profile.
+# Characters that cannot work in the generated line are rejected, see below.
+#
+# This script can be run with argument --dry-run or -n to only report what
+# would be added, without modifying the profile. Exit code is then 2 if there
+# was anything to add, and 0 if everything was already configured.
+#
+# The main advantages of using this script are simpler syntax for bulk adding
+# multiple paths, and checking for existing entries. If the exact same line
+# already exists that is reported and the profile is left alone. If the path is
+# referred to by some other line that is reported as a warning, but the line is
+# still added, since it is a no-op when the path is already in PATH anyway.
+#
+# NOTE: Adding the PATH variable into the user profile '.bashrc'. One may
+# prefer '.bash_profile' for such things, but assuming Arch Linux default setup
+# where '.bash_profile' sources '.bashrc' everything might just as well be
+# put into '.bashrc'. Default '.bashrc' has a test for if the shell is running
+# interactively, so to make the PATH changes apply even when not running
+# interactively, like it would if put into '.bash_profile', then it needs to
+# be above this test. That is not ensured automatically here, but just noted
+# in a message for user to do manually. Also, since this is in bash-specific
+# profile, it will not have effect when running POSIX/sh type shell.
+#
+# Examples:
+#   bash-searchpath "${HOME}/.local/bin"
+#   bash-searchpath "${HOME}/.local/bin" "${HOME}/.dotnet/tools"
+#   bash-searchpath '${DOTNET_CLI_HOME}/.dotnet/tools'
+#   bash-searchpath --file=/home/other/.bashrc "${HOME}/.local/bin"
+#
+
+if [ $# -lt 1 ]; then
+    echo "Missing arguments" >&2
+    echo "Usage: ${0} [--dry-run] [--file=file] directory..." >&2
+    exit 1
+fi
+
+# Handle options.
+# They may be anywhere in the list of arguments, looking for any prefixed
+# with '-', except the special end of options marker "--", recognizing
+# flag --dry-run and option --file, warning about any other.
+# NOTE: Unlike bash-alias, which takes the profile as an optional positional
+# argument, it must here be given as an option. In bash-alias the positional
+# alternative can be told apart from the alias definitions by not containing
+# '=', but here every other argument is a path so there is nothing to tell
+# them apart by. Only the --file=value form is supported, and not a separate
+# value argument, since that value would in turn be indistinguishable from a
+# path in the loop below.
+dry_run=0
+file=""
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run|-n) dry_run=1 ;;
+        --file=*) file="${arg#--file=}" ;;
+        --) break ;;
+        -*) printf 'Unknown flag: %s\n' "$arg" >&2; exit 1 ;;
+    esac
+done
+if [ -z "$file" ]; then
+    file="${HOME}/.bashrc"
+fi
+if [ ! -f "$file" ]; then
+    echo "Failed to find bash user profile '${file}'" >&2
+    exit 1
+fi
+
+# Process paths.
+# Lines added so far in this run, used for two things: to recognize a directory
+# given more than once among the arguments, and afterwards to tell whether
+# anything was added at all. Checking the profile alone is not enough for the
+# first, since in a dry run nothing is written to it, and a repeated directory
+# would then be reported as if it was going to be added twice.
+pending=
+for argument in "$@"; do
+    case "$argument" in
+        -*) continue ;; # Ignore (option or end of options marker, already handled)
+    esac
+    # Verify valid directory.
+    # It cannot be empty, since an empty entry in PATH means the current
+    # working directory, and the generated line would in any case be nonsense.
+    # It cannot contain ':', which separates the entries in PATH, so it would
+    # end up as two entries instead of the one asked for. And it cannot contain
+    # the shell syntax that would make the generated line something other than
+    # a plain assignment: a double quote or backtick, or a command
+    # substitution. Those are not only executed when expanding below, they are
+    # written into the profile, where they would be executed by every future
+    # shell session, or break the profile entirely.
+    case "$argument" in
+        ''|*[:\"\`]*|*'$('*)
+            printf "Skipping invalid directory '%s'\n" "$argument" >&2
+            continue
+            ;;
+    esac
+    # The argument is written to the profile exactly as given, and expanded
+    # only to report on the current shell session below. A variable reference
+    # therefore stays a variable reference in the profile, which is the point
+    # of supplying one.
+    dir_expr="$argument"
+    eval "dir=\"${argument}\""
+    # Build the line to add to the profile.
+    line='[[ ":$PATH:" != *":'"${dir_expr}"':"* ]] && PATH="${PATH:+$PATH:}'"${dir_expr}"'"'
+    line_escaped=$(printf '%s' "$line" | sed 's/[]\.^$*[]/\\&/g') # Escape BRE metacharacters
+    skipped=1
+    if grep -q "^${line_escaped}$" "$file"; then
+        echo "Skipping '${dir_expr}': Already added to PATH by an identical line in '${file}'"
+    elif printf '%s\n' "$pending" | grep -q "^${line_escaped}$"; then
+        echo "Skipping '${dir_expr}': Already handled by an earlier argument in this run"
+    else
+        skipped=
+        # Look for any other uncommented line referring to the same path,
+        # either as the expression or fully expanded, to warn about an existing
+        # configuration that this script did not write. The line added below is
+        # harmless in that case, since its test makes it a no-op when the path
+        # is already in PATH, but the user should know about it.
+        # Note that the expanded form is only included when it is known and
+        # differs, both to avoid a redundant pattern and because an empty one
+        # would match every line.
+        # The match must be bounded by a separator, quote, equals sign or
+        # whitespace, so that the directory is recognized as a whole entry of a
+        # PATH assignment and not as an arbitrary substring of one. Without
+        # that, '/.local/bin' would match an existing entry for
+        # '${HOME}/.local/bin', and '/opt' would match one for
+        # '/opt/tools/bin', reporting directories that are not the same.
+        before="\(^\|[:=\"'[:space:]]\)"
+        after="\([:\"'[:space:]]\|\$\)"
+        expr_escaped=$(printf '%s' "$dir_expr" | sed 's/[]\.^$*[]/\\&/g')
+        if [ -n "$dir" ] && [ "$dir" != "$dir_expr" ]; then
+            dir_escaped=$(printf '%s' "$dir" | sed 's/[]\.^$*[]/\\&/g')
+            existing=$(grep -e "${before}${expr_escaped}${after}" -e "${before}${dir_escaped}${after}" "$file" | grep -v '^[[:space:]]*#')
+        else
+            existing=$(grep -e "${before}${expr_escaped}${after}" "$file" | grep -v '^[[:space:]]*#')
+        fi
+        if [ -n "$existing" ]; then
+            echo "WARNING: The path is already referred to by existing line(s) in '${file}':"
+            echo "$existing" | sed 's/^/  /'
+        fi
+        if [ "$dry_run" -eq 1 ]; then
+            echo "Would add ${line}"
+        else
+            echo "Adding ${line}"
+            # Make sure existing content is terminated, else the line would be
+            # appended to the last line instead of as a new line.
+            if [ -s "$file" ] && [ -n "$(tail -c 1 "$file")" ]; then
+                if ! printf '\n' >> "$file"; then
+                    echo "Failed to write to bash user profile '${file}'" >&2
+                    exit 1
+                fi
+            fi
+            if ! printf '%s\n' "$line" >> "$file"; then
+                echo "Failed to write to bash user profile '${file}'" >&2
+                exit 1
+            fi
+        fi
+        pending="${pending}
+${line}"
+    fi
+    # Report whether it is usable right away, since the profile is only read by
+    # future shell sessions.
+    if [ -z "$dir" ]; then
+        echo "NOTICE: Unable to check PATH of this shell session, since '${dir_expr}' refers"
+        echo "  to a variable which is not set here. It is resolved by the sessions reading"
+        echo "  the profile."
+    else
+        # A location which does not exist is not necessarily a mistake, since
+        # it may well be created later, e.g. when installing the application it
+        # belongs to. But it is also what a mistyped path looks like, and what
+        # an expression where the shell expanded a variable that was not set
+        # ends up as, so it is worth reporting.
+        if [ ! -d "$dir" ]; then
+            echo "NOTICE: The location '${dir}' does not currently exist"
+        fi
+        if ! echo ":${PATH}:" | grep --quiet --fixed-strings ":${dir}:"; then
+            # The expected case: the profile is only read by new sessions.
+            echo "NOTICE: '${dir}' is not in PATH of this shell session, so it"
+            echo "  takes effect in new sessions. To use it in this one, run:"
+            echo "  export PATH=\"\${PATH:+\$PATH:}${dir_expr}\""
+        elif [ -z "$skipped" ]; then
+            # The unexpected case, and only when the line was just added: the
+            # location is in PATH even though the profile did not configure it,
+            # so something else must be, and the line just added is possibly
+            # redundant. When the line was already in the profile this is
+            # instead exactly what is expected, and nothing is reported.
+            echo "NOTICE: '${dir}' is already in PATH of this shell session,"
+            echo "  even though it was not configured in the profile until now, so"
+            echo "  something else is adding it, such as a system-wide configuration"
+            echo "  or another profile script. The line added here may be redundant."
+        fi
+    fi
+done
+
+if [ -n "$pending" ]; then
+    if [ "$dry_run" -eq 1 ]; then
+        echo "NOTICE: Nothing was written, since this is a dry run"
+        exit 2 # Note: Exit code 2 here to indicate not an error but that there was something to add!
+    fi
+    echo "NOTICE: This was added to the end of the file, but if the file has a check"
+    echo "  for shell running interactively you might consider moving it above that check."
+fi

@@ -10,6 +10,10 @@
 # - ccc (continue):
 #   - Start REPL and continue previous session. This fails if there are none.
 #   - This runs with argument --continue.
+# - ccr (resume):
+#   - Start REPL and resume a conversation by ID or name given as argument,
+#     or open the interactive session picker.
+#   - This runs with argument --resume.
 # - ccs (stealth):
 #   - Start REPL without storing session, prompt history and file history.
 #   - This sets undocumented environment variable
@@ -44,6 +48,7 @@
 "$(dirname "${0}")/bash-alias" "$@" \
     "ccn=claude" \
     "ccc=claude --continue" \
+    "ccr=claude --resume" \
     "ccs=CLAUDE_CODE_SKIP_PROMPT_HISTORY=1 CLAUDE_CODE_DISABLE_FILE_CHECKPOINTING=1 claude" \
     "ccp=claude --no-session-persistence --print"
     #"ccd=claude --dangerously-skip-permissions"

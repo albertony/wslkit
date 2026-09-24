@@ -23,14 +23,15 @@
 # Usage: arch-dev-install [profile...] [-- [pacman-args...]]
 #
 # Available generic profiles:
-#   tools   jq, BLAKE3, xxHash, 7-Zip, Info-ZIP, Diff, Patch, nano, Wget, cURL,
-#           sed, grep
+#   core    Info-ZIP, Diff, Patch, less, nano, Wget, cURL, sed, grep
+#   tools   7-Zip, rsync, Blake3, xxHash, fd, ripgrep, Jq, shfmt
 #   git     Git, SSH client/server, SSL toolkit
-#   python  Python, IPython, Pylint, Black, pytest, PyYAML, TOML Kit
+#   python  python uv
 #   cpp     GCC C/C++ compiler, GDB debugger, CMake/Ninja build system, Boost
 #   go      Go SDK
 #   dotnet  .NET SDK
 #   aspnet  .NET SDK, ASP.NET Core
+#   node    Node.js, NPM
 #
 # Available project profiles:
 #   claude  socat bubblewrap
@@ -125,9 +126,8 @@
 #     90 MiB installed.
 #
 
-# Generic profile "tools": Basic support tools.
-# - This installs jq, BLAKE3, xxHash, 7-Zip, Info-ZIP, Diff, Patch, nano,
-#   Wget, cURL, sed and grep.
+# Generic profile "core": Classic basic support tools (possibly preinstalled).
+# - This installs Info-ZIP, Diff, Patch, nano, Wget, cURL, sed and grep.
 # - Package diffutils and patch brings the classic diff and patch utilities.
 # - Info-ZIP is distributed as two separate packages, zip and unzip. In general
 #   its features overlaps with 7-Zip, and in general 7-Zip has a lot more
@@ -140,7 +140,23 @@
 #   when running ./arch-setup, which should have been done when setting up the
 #   distro. However, we include them here as well, for completeness, and just
 #   in case, and since they will just be skipped if already installed.
-profile_tools="jq b3sum xxhash 7zip zip unzip diffutils patch less nano wget curl sed grep"
+profile_core="zip unzip diffutils patch less nano wget curl sed grep"
+
+# Generic profile "tools": Additional support tools.
+# - This installs 7-Zip, rsync, Blake3, xxHash, fd, ripgrep, Jq and shfmt.
+# - This extends the "core" profile with additional tools that are normally
+#   not preinstalled, several of them modern alternatives to classic tools
+# - fd is a faster alternative to GNU find, ripgrep (command rg) is a faster
+#   alternative to GNU grep.
+# - Blake3 and xxHash are modern hashing tools, good alternatives to traditional
+#   hashing variants. Blake2 is typically preinstalled and xxHash is a dependency
+#   of e.g. rsync and GDB. Both are small tools, so may just as well explicitly
+#   install them.
+# - Jq is the de-facto standard json processor.
+# - shfmt is a shell parser, formatter, and interpreter. Nice to use with shell
+#   scripting, and quite small. There is also a static analysis tool shellcheck,
+#   but it is bigger as it drags in Hashell dependencies, so dropping that.
+profile_tools="7zip rsync b3sum xxhash fd ripgrep jq shfmt"
 
 # Generic profile "git": Git and related tools.
 # - This installs Git, SSH client/server, SSL toolkit and Less.
@@ -163,66 +179,30 @@ profile_tools="jq b3sum xxhash 7zip zip unzip diffutils patch less nano wget cur
 profile_git="git openssh openssl less"
 
 # Generic profile "python": Python development environment.
-# - This installs Python, IPython, Pylint, Black, pytest, PyYAML and TOML Kit.
-# - This brings python core language support with a few frequently used,
-#   or small nice to have, additional extensions and tools for Python
-#   development.
-# - A lot of additional python packages will be included as dependencies.
-#   It may make sense to explicit specify some of them as well, to make pacman
-#   consider them "explicitly installed" instead of "installed as a dependency
-#   for another package".
-#   - Pylint includes dependencies python-astroid, python-colorama,
-#     python-dill, python-isort, python-setuptools, python-jaraco.collections,
-#     python-jaraco.functools, python-jaraco.text, python-autocommand,
-#     python-more-itertools, python-packaging, python-wheel,
-#     python-pkg_resources, python-typing_extensions, python-mccabe,
-#     python-platformdirs, python-tomlkit.
-#   - Black includes dependencies python-click, python-mypy_extensions,
-#     python-packaging, python-pathspec, python-platformdirs, python-pytokens.
-#     - From the opposite perspective, Black is an optional dependency of
-#       IPython, so it makes sense to include both of these together.
-#   - pytest includes dependencies python-iniconfig, python-packaging,
-#     python-pluggy, python-pygments.
-#   - IPython includes dependencies python-argcomplete, python-asttokens,
-#     python-decorator, python-executing, python-ipython-pygments-lexers,
-#     python-jedi, python-matplotlib-inline, python-parso, python-pexpect,
-#     python-prompt_toolkit, python-ptyprocess, python-pure-eval,
-#     python-pygments, python-stack-data, python-traitlets,
-#     python-typing_extensions, python-wcwidth.
-# - JSON support is built-in with json module, TOML parsing is built-in with
-#   tomllib module, TOML writing supported by python-tomlkit which is a
-#   dependency of pylint, INI support is built-in with configparser module and
-#   alternative python-iniconfig is a dependency of pytest. Here we specify
-#   python-tomlkit to make it explicitly installed, and add package python-yaml
-#   to get YAML support as well, and then all of these formats should be well
-#   covered from the start.
-# - NOTE: There are a lot of other packages which may often be relevant, but it
-#   may differ a lot between use cases, and some of them are quite large, so it
-#   is better to let them be explicitly specified when needed, or consider
-#   adding additional profiles for them. Some of the ones that are considered:
-#   - NumPy (python-numpy)
-#     - Scientific tools.
-#     - Includes dependencies blas, cblas and lapack.
-#     - Quite large, over 60 MiB with dependencies.
-#   - Matplotlib (python-matplotlib)
-#     - Plotting library, designed to work with NumPy.
-#     - Package python-matplotlib, which depends on python-numpy and quite many
-#       other dependencies, adding around 200 MiB disk usage.
-#   - Sphinx (python-sphinx)
-#     - Documentation generator.
-#     - Depends on Babel, an internationalizing package, python-babel.
-#     - Can be combined with a lot of extra extensions, e.g. a Read the Docs
-#       theme (python-sphinx_rtd_theme).
-#     - Adds about 70 MiB installed size with dependencies.
-#   - Graphviz (python-graphviz)
-#     - Graph visualization.
-#     - Package python-graphviz is official Python language bindings, a tiny
-#       package, but depends on graphviz which contains the complete native
-#       application (with includes and libraries).
-#     - The core graphviz package has decent size of about 10 MiB, but includes
-#       a large dependency tree with some large dependencies, such as
-#       ghostscript and x265, so may easy add 250 MiB disk usage.
-profile_python="python ipython python-pylint python-black python-pytest python-yaml python-tomlkit"
+# - This installs Python and uv.
+# - This brings Python core language support as a system feature. With uv this
+#   is not really necessary, since it usually manages Python runtime
+#   installations locally, and then also gives proper versioning. For Python
+#   development, it may be problematic to depend on the system-installed python
+#   version of a rolling Linux distro, and using a dedicated package manager
+#   and environment/project manager like uv is highly recommended. The reason
+#   to install python from pacman, is mainly just for convenience to have a
+#   default python version following the system. It can be used for simple
+#   scripting, and will also be used by uv if it satisfies version requirement,
+#   and it make it possible to configure uv with python-downloads "never" (and
+#   also more convenient with "manual"). But also, other pacman packages, like
+#   gdb and cppcheck, have dependency to python packages and will install it
+#   implicitly anyway. We therefore have currently chosen to explicitly install
+#   the base python package, in addition to uv from pacman. We do not install
+#   any python utility packages, such as python-pylint, python-pytest and
+#   python-numpy. For development these are best installed with uv, and we only
+#   let the extra pacman packages be installed implicitly as dependencies when
+#   needed.
+# - With uv we get a modern package and project manager. It is a single tool to
+#   replace pip, poetry, virtualenv, and more. Python core language support,
+#   the python interpreter itself, and other python tools and libraries that are
+#   needed for development are installed with that.
+profile_python="python uv"
 
 # Generic profile "cpp": C++ development environment.
 # - This installs GCC C/C++ compiler, GDB debugger, CMake and Ninja build
@@ -269,6 +249,10 @@ profile_dotnet="dotnet-sdk"
 #   both (but it does not harm either).
 profile_aspnet="dotnet-sdk aspnet-runtime aspnet-targeting-pack"
 
+# Generic profile "node": Node.js development environment.
+# - This installs Node.js and NPM (which depends on Node.js).
+profile_node="nodejs npm"
+
 # Project profile "claude": Claude Code runtime dependencies.
 # - This installs the optional dependencies socat and bubblewrap, required for
 #   the sandboxing mode in Claude Code.
@@ -284,7 +268,12 @@ profile_claude="socat bubblewrap"
 #   one wants to use specific features, or have a complete environment and be
 #   able to run all the steps done by the official workflows.
 # - Python is needed to be able to run various utility scripts, including
-#   scripts that generate complete Markdown documentation.
+#   scripts that generate complete Markdown documentation. It is not included
+#   here, add the python profile when needed. As of now, the base python
+#   package is enough - all relevant scripts use stdlib modules only,
+#   the only exception is pyaml used by one script, but python-pyaml is not
+#   installed with the python profile so to use that script one either need
+#   to install that in addition, or (better) use an uv environment.
 # - Hugo is needed to be able to generate (and serve) static HTML website
 #   from the Markdown documentation.
 # - Make is needed to be able to build the official makefiles.
@@ -299,7 +288,7 @@ profile_claude="socat bubblewrap"
 profile_rclone="go python hugo make fuse3"
 
 # Meta profiles.
-profile_generic="$profile_tools $profile_git $profile_python $profile_cpp $profile_go $profile_dotnet"
+profile_generic="$profile_core $profile_tools $profile_git $profile_python $profile_cpp $profile_go $profile_aspnet $profile_node"
 profile_all="$profile_generic $profile_claude $profile_rclone"
 
 packages=""
@@ -307,6 +296,7 @@ packages=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --) shift; break;;
+        core)    packages="$packages $profile_core" ;;
         tools)   packages="$packages $profile_tools" ;;
         git)     packages="$packages $profile_git" ;;
         python)  packages="$packages $profile_python" ;;
@@ -314,13 +304,14 @@ while [ $# -gt 0 ]; do
         go)      packages="$packages $profile_go" ;;
         dotnet)  packages="$packages $profile_dotnet" ;;
         aspnet)  packages="$packages $profile_aspnet" ;;
+        node)    packages="$packages $profile_node" ;;
         claude)  packages="$packages $profile_claude" ;;
         rclone)  packages="$packages $profile_rclone" ;;
         generic) packages="$packages $profile_generic" ;;
         all)     packages="$packages $profile_all" ;;
         *)
             echo "Unknown profile: $1" >&2
-            echo "Supported profiles: tools, git, python, cpp, go, dotnet, aspnet, claude, rclone, generic, all" >&2
+            echo "Supported profiles: core, tools, git, python, cpp, go, dotnet, aspnet, claude, rclone, generic, all" >&2
             echo "Additional packages can be added after a -- separator" >&2
             exit 1
             ;;

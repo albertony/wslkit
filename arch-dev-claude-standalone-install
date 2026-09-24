@@ -161,6 +161,11 @@ done
 bin_dir="${HOME}/.local/bin"
 bin_dir_expr='${HOME}/.local/bin'
 
+# The line adding the location to PATH, as it is written to, and looked for in,
+# the user profile. The test in it means it does nothing when the location is
+# already in PATH, so it is harmless to execute more than once in a session.
+path_line='[[ ":$PATH:" != *":'"${bin_dir_expr}"':"* ]] && PATH="${PATH:+$PATH:}'"${bin_dir_expr}"'"'
+
 if [ -f "${bin_dir}/claude" ]; then
     echo "There is an existing file '${bin_dir}/claude' so Claude Code is probably already installed!" >&2
     exit 1
@@ -365,7 +370,7 @@ if echo ":${PATH}:" | grep --quiet --fixed-strings ":${bin_dir}:"; then
             echo "  for future sessions. If this is not the case, you can manually fix it by"
             echo "  adding something like the following into the user profile '.bashrc',"
             echo "  preferably near the top, before any check for shell running interactively:"
-            echo '  [[ ":$PATH:" != *":'"${bin_dir_expr}"':"* ]] && PATH="${PATH:+$PATH:}'"${bin_dir_expr}"'"'
+            echo "  ${path_line}"
         fi
     else
         echo "WARNING: Command 'claude' is not available in this shell session"
@@ -378,16 +383,37 @@ else
         echo "WARNING: Unable to add the location to PATH automatically. You can fix this"
         echo "  manually by adding something like this, preferably near the top, before any"
         echo "  check for shell running interactively"
-        echo '[[ ":$PATH:" != *":'"${bin_dir_expr}"':"* ]] && PATH="${PATH:+$PATH:}'"${bin_dir_expr}"'"'
+        echo "${path_line}"
+    elif grep --quiet --line-regexp --fixed-strings "${path_line}" "${HOME}/.bashrc"; then
+        echo "The location is already added to PATH in user profile '.bashrc'"
+        echo "NOTICE: Restart the shell session for it to take effect, or run the following:"
+        echo "  export PATH=\"\${PATH:+\$PATH:}${bin_dir_expr}\""
     else
         echo "Adding the location to PATH in user profile '.bashrc'"
         echo "NOTICE: This will be added to the end of the file, but if the file has a check"
         echo "  for shell running interactively you might consider moving it above that check."
-        echo "  If this has recently already been configured in your profile but without"
-        echo "  restarting the shell, the result will be a duplicate entry."
-        echo '[[ ":$PATH:" != *":'"${bin_dir_expr}"':"* ]] && PATH="${PATH:+$PATH:}'"${bin_dir_expr}"'"' >> "${HOME}/.bashrc"
-        echo "NOTICE: You still cannot run command 'claude' without path in this shell session"
-        #echo "NOTICE: This takes effect in new shell sessions only"
+        echo "  Only an identical line is recognized as already configured, so if the profile"
+        echo "  adds the same location in some other form, the result is a redundant entry."
+        # Make sure existing content is terminated, else the line would be
+        # appended to the last line instead of as a new line.
+        # Note that a failure here does not need its own handling, since the
+        # write below targets the same file and reports it.
+        if [ -s "${HOME}/.bashrc" ] && [ -n "$(tail -c 1 "${HOME}/.bashrc")" ]; then
+            printf '\n' >> "${HOME}/.bashrc"
+        fi
+        # Note that a failure to write is reported but not treated as fatal,
+        # like elsewhere in this section, since the application itself is
+        # installed and usable, it is only the profile that needs a manual fix.
+        if ! echo "${path_line}" >> "${HOME}/.bashrc"; then
+            echo "WARNING: Failed to write to user profile '.bashrc'"
+            echo "WARNING: Unable to add the location to PATH automatically. You can fix this"
+            echo "  manually by adding this, preferably near the top, before any check for"
+            echo "  shell running interactively"
+            echo "${path_line}"
+        else
+            echo "NOTICE: You still cannot run command 'claude' without path in this shell session"
+            #echo "NOTICE: This takes effect in new shell sessions only"
+        fi
     fi
 fi
 
@@ -457,6 +483,8 @@ fi
 #   - CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL=1
 #   - It can be done manually later, from the /plugin slash command, by adding
 #     "anthropics/claude-plugins-official" as a Marketplace.
+# - Skip creating a standard desktop entry file on first prompt, which is used
+#   to register deep linking (URL handler) for claude-cli:// URLs.
 # - Enable more privacy, minimize interference and unnecessary network traffic.
 #   - Disable telemetry, error reporting and feedback prompts.
 #     - DISABLE_TELEMETRY=1
@@ -493,11 +521,12 @@ if [ ! -f "$settings_file" ] || [ -w "$settings_file" ]; then
         cat > "$settings_file" << 'EOF'
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "disableDeepLinkRegistration": "disable",
+  "allowedMcpServers": [],
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": false
   },
-  "allowedMcpServers": [],
   "env": {
     "DISABLE_TELEMETRY": "1",
     "DISABLE_FEEDBACK_COMMAND": "1",
@@ -556,8 +585,23 @@ else
     echo "Overriding configuration directory with CLAUDE_CONFIG_DIR in user profile '.bashrc'"
     echo "NOTICE: This will be added to the end of the file, but if the file has a check"
     echo "  for shell running interactively you might consider moving it above that check."
-    echo "export CLAUDE_CONFIG_DIR=\"${config_dir_expr}\"" >> "${HOME}/.bashrc"
-    if [ -n "${CLAUDE_CONFIG_DIR}" ]; then
+    # Make sure existing content is terminated, else the line would be
+    # appended to the last line instead of as a new line.
+    # Note that a failure here does not need its own handling, since the write
+    # below targets the same file and reports it.
+    if [ -s "${HOME}/.bashrc" ] && [ -n "$(tail -c 1 "${HOME}/.bashrc")" ]; then
+        printf '\n' >> "${HOME}/.bashrc"
+    fi
+    # Note that a failure to write is reported but not treated as fatal, like
+    # elsewhere in this section, since the application itself is installed and
+    # usable, it is only the profile that needs a manual fix.
+    if ! echo "export CLAUDE_CONFIG_DIR=\"${config_dir_expr}\"" >> "${HOME}/.bashrc"; then
+        echo "WARNING: Failed to write to user profile '.bashrc'"
+        echo "WARNING: Unable to override configuration directory with CLAUDE_CONFIG_DIR"
+        echo "  automatically. You need to make sure the following are executed before"
+        echo "  starting claude:"
+        echo "  export CLAUDE_CONFIG_DIR=\"${config_dir_expr}\""
+    elif [ -n "${CLAUDE_CONFIG_DIR}" ]; then
         # It is implied that the value of $CLAUDE_CONFIG_DIR is the same as
         # $config_dir at this point, due to the logic where we set config_dir.
         echo "Since the variable CLAUDE_CONFIG_DIR is already set in the current shell session"
